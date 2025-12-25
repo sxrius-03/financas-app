@@ -1,8 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, date
-from modules.database import salvar_cartao, carregar_cartoes, excluir_cartao, salvar_compra_credito, carregar_fatura
-# IMPORTAÇÃO CENTRALIZADA
+from modules.database import salvar_cartao, carregar_cartoes, excluir_cartao, salvar_compra_credito, carregar_fatura, atualizar_item_fatura
 from modules.constants import LISTA_CATEGORIAS_DESPESA
 
 def show_cartoes():
@@ -15,118 +14,88 @@ def show_cartoes():
     
     df_cartoes = carregar_cartoes(user_id)
 
-    # --- ABA 1: VER FATURAS ---
+    # ABA 1: VER FATURAS (Com Edição)
     with tab_fatura:
         if df_cartoes.empty:
-            st.warning("Cadastre um cartão primeiro na aba 'Cadastrar Cartão'.")
+            st.warning("Cadastre um cartão primeiro.")
         else:
             c1, c2 = st.columns(2)
-            # Selecionar Cartão pelo Nome
             cartao_selecionado = c1.selectbox("Selecione o Cartão", df_cartoes['nome_cartao'].tolist())
+            id_cartao = int(df_cartoes[df_cartoes['nome_cartao'] == cartao_selecionado]['id'].values[0])
             
-            # Pegamos o ID interno (Ex: 1, 2) correspondente ao nome escolhido
-            id_raw = df_cartoes[df_cartoes['nome_cartao'] == cartao_selecionado]['id'].values[0]
-            id_cartao = int(id_raw)
-            
-            # Selecionar Mês da Fatura
             mes_atual = date.today().replace(day=1)
-            opcoes_meses = [mes_atual.replace(month=m) for m in range(1, 13)] 
-            try:
-                opcoes_meses += [mes_atual.replace(year=mes_atual.year+1, month=m) for m in range(1, 13)]
-            except: pass 
+            opcoes_meses = [mes_atual.replace(month=m) for m in range(1, 13)]
+            try: opcoes_meses += [mes_atual.replace(year=mes_atual.year+1, month=m) for m in range(1, 13)]
+            except: pass
             
-            mes_escolhido = c2.selectbox(
-                "Mês da Fatura", 
-                opcoes_meses, 
-                format_func=lambda x: x.strftime("%B/%Y"),
-                index=mes_atual.month - 1
-            )
+            mes_escolhido = c2.selectbox("Mês da Fatura", opcoes_meses, format_func=lambda x: x.strftime("%B/%Y"), index=mes_atual.month - 1)
             
-            # Busca Fatura usando o ID interno
             df_fatura = carregar_fatura(user_id, id_cartao, mes_escolhido)
-            
             st.divider()
             
             if df_fatura.empty:
-                st.info(f"Nenhuma fatura encontrada para {cartao_selecionado} em {mes_escolhido.strftime('%m/%Y')}.")
+                st.info(f"Fatura vazia.")
             else:
                 total_fatura = df_fatura['valor_parcela'].sum()
-                st.metric(f"Total da Fatura ({mes_escolhido.strftime('%m/%Y')})", f"R$ {total_fatura:,.2f}")
+                st.metric(f"Total da Fatura", f"R$ {total_fatura:,.2f}")
+                st.dataframe(df_fatura[['data_compra', 'descricao', 'parcela_numero', 'qtd_parcelas', 'valor_parcela']], use_container_width=True)
                 
-                st.dataframe(
-                    df_fatura[['data_compra', 'descricao', 'parcela_numero', 'qtd_parcelas', 'valor_parcela']],
-                    use_container_width=True,
-                    column_config={
-                        "data_compra": st.column_config.DateColumn("Data Compra", format="DD/MM/YYYY"),
-                        "valor_parcela": st.column_config.NumberColumn("Valor", format="R$ %.2f"),
-                        "parcela_numero": "Parc.",
-                        "qtd_parcelas": "Total Parc."
-                    }
-                )
+                # --- ÁREA DE EDIÇÃO DO ITEM ---
+                st.markdown("### ✏️ Editar Item desta Fatura")
+                opcoes_item = df_fatura.apply(lambda r: f"Item {r['id']} | {r['descricao']} - R$ {r['valor_parcela']:.2f}", axis=1)
+                item_sel = st.selectbox("Selecione um item para corrigir:", ["Selecione..."] + list(opcoes_item))
+                
+                if item_sel != "Selecione...":
+                    id_item = int(item_sel.split(" |")[0].replace("Item ", ""))
+                    dados_item = df_fatura[df_fatura['id'] == id_item].iloc[0]
+                    
+                    with st.form(f"form_edit_item_{id_item}"):
+                        st.caption("Nota: Alterar aqui afeta apenas ESTA parcela.")
+                        ni_desc = st.text_input("Descrição", value=dados_item['descricao'])
+                        c_val, c_dat = st.columns(2)
+                        ni_valor = c_val.number_input("Valor da Parcela", value=float(dados_item['valor_parcela']))
+                        ni_data = c_dat.date_input("Data Compra", value=pd.to_datetime(dados_item['data_compra']))
+                        
+                        if st.form_submit_button("Atualizar Item"):
+                            atualizar_item_fatura(user_id, id_item, ni_desc, ni_valor, ni_data)
+                            st.success("Item corrigido!")
+                            st.rerun()
 
-    # --- ABA 2: NOVA COMPRA ---
+    # ABA 2: NOVA COMPRA (Igual)
     with tab_compra:
         st.subheader("Registrar Gasto no Crédito")
-        if df_cartoes.empty:
-            st.warning("Cadastre um cartão primeiro!")
-        else:
+        if not df_cartoes.empty:
             with st.form("form_compra_credito"):
                 c1, c2 = st.columns(2)
                 cartao_nome = c1.selectbox("Cartão Usado", df_cartoes['nome_cartao'].tolist())
                 data_compra = c2.date_input("Data da Compra", date.today())
-                
-                desc = st.text_input("Descrição (Loja/Item)")
-                
-                # AGORA USA A LISTA CENTRAL
+                desc = st.text_input("Descrição")
                 cat = st.selectbox("Categoria", options=LISTA_CATEGORIAS_DESPESA)
-                
                 c3, c4 = st.columns(2)
-                valor_total = c3.number_input("Valor TOTAL da Compra (R$)", min_value=0.01)
-                parcelas = c4.number_input("Nº de Parcelas", min_value=1, step=1, value=1)
+                valor_total = c3.number_input("Valor TOTAL", min_value=0.01)
+                parcelas = c4.number_input("Parcelas", min_value=1, step=1, value=1)
                 
-                if st.form_submit_button("Lançar Compra", type="primary"):
-                    # Pega informações do cartão escolhido
+                if st.form_submit_button("Lançar"):
                     info_cartao = df_cartoes[df_cartoes['nome_cartao'] == cartao_nome].iloc[0]
-                    
-                    id_cartao_submit = int(info_cartao['id'])
-                    dia_fechamento_submit = int(info_cartao['dia_fechamento'])
-                    
-                    salvar_compra_credito(
-                        user_id, 
-                        id_cartao_submit, 
-                        data_compra, 
-                        desc, 
-                        cat, 
-                        valor_total, 
-                        int(parcelas), 
-                        dia_fechamento_submit
-                    )
-                    st.success("Compra registrada e parcelas geradas!")
+                    salvar_compra_credito(user_id, int(info_cartao['id']), data_compra, desc, cat, valor_total, int(parcelas), int(info_cartao['dia_fechamento']))
+                    st.success("Lançado!")
 
-    # --- ABA 3: GERENCIAR CARTÕES ---
+    # ABA 3: GERENCIAR (Igual)
     with tab_gerenciar:
         st.subheader("Cadastrar Novo Cartão")
-        st.caption("Aqui você cria apenas a identificação do cartão. Não insira o número real.")
-        
         with st.form("form_novo_cartao"):
-            nome = st.text_input("Apelido do Cartão (Ex: Nubank, Black do Itaú)")
+            nome = st.text_input("Apelido do Cartão")
             c1, c2 = st.columns(2)
-            fechamento = c1.number_input("Dia que a Fatura Fecha", 1, 31, 1)
-            vencimento = c2.number_input("Dia que a Fatura Vence", 1, 31, 10)
-            
+            fechamento = c1.number_input("Dia Fechamento", 1, 31, 1)
+            vencimento = c2.number_input("Dia Vencimento", 1, 31, 10)
             if st.form_submit_button("Salvar Cartão"):
                 salvar_cartao(user_id, nome, fechamento, vencimento)
                 st.success("Cartão cadastrado!")
                 st.rerun()
-        
-        st.divider()
-        st.subheader("Meus Cartões Cadastrados")
         if not df_cartoes.empty:
-            st.dataframe(df_cartoes[['nome_cartao', 'dia_fechamento', 'dia_vencimento']], hide_index=True)
-            
+            st.divider()
             cartao_del = st.selectbox("Excluir Cartão", df_cartoes['nome_cartao'].tolist(), key="del_cartao")
             if st.button("🗑️ Excluir Selecionado"):
                 id_del = df_cartoes[df_cartoes['nome_cartao'] == cartao_del]['id'].values[0]
                 excluir_cartao(user_id, int(id_del))
-                st.success("Cartão excluído.")
                 st.rerun()

@@ -33,7 +33,7 @@ def init_db():
         )
     ''')
 
-    # 3. Lançamentos (Caixa / Débito)
+    # 3. Lançamentos (Caixa)
     c.execute('''
         CREATE TABLE IF NOT EXISTS lancamentos (
             id SERIAL PRIMARY KEY,
@@ -77,9 +77,7 @@ def init_db():
         )
     ''')
 
-    # --- NOVAS TABELAS ---
-
-    # 6. Cartões de Crédito (Cadastros)
+    # 6. Cartões de Crédito
     c.execute('''
         CREATE TABLE IF NOT EXISTS cartoes_credito (
             id SERIAL PRIMARY KEY,
@@ -90,7 +88,7 @@ def init_db():
         )
     ''')
 
-    # 7. Lançamentos de Cartão (Compras Parceladas)
+    # 7. Lançamentos de Cartão
     c.execute('''
         CREATE TABLE IF NOT EXISTS lancamentos_cartao (
             id SERIAL PRIMARY KEY,
@@ -102,11 +100,11 @@ def init_db():
             valor_parcela NUMERIC,
             parcela_numero INTEGER,
             qtd_parcelas INTEGER,
-            mes_fatura DATE  -- Data de referência da fatura (Ex: 01/01/2025)
+            mes_fatura DATE
         )
     ''')
 
-    # 8. Recorrências (Contas Fixas)
+    # 8. Recorrências
     c.execute('''
         CREATE TABLE IF NOT EXISTS recorrencias (
             id SERIAL PRIMARY KEY,
@@ -115,7 +113,7 @@ def init_db():
             valor NUMERIC,
             categoria TEXT,
             dia_vencimento INTEGER,
-            tipo TEXT, -- Receita ou Despesa
+            tipo TEXT,
             ativa BOOLEAN DEFAULT TRUE
         )
     ''')
@@ -123,7 +121,7 @@ def init_db():
     conn.commit()
     conn.close()
 
-# --- SESSÃO E AUTH (MANTIDO IGUAL) ---
+# --- SESSÃO E AUTH ---
 
 def criar_sessao(user_id):
     token = str(uuid.uuid4())
@@ -193,6 +191,18 @@ def salvar_lancamento(user_id, dados: dict):
     conn.commit()
     conn.close()
 
+def atualizar_lancamento(user_id, id_lancamento, dados: dict):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('''
+        UPDATE lancamentos
+        SET data=%s, tipo=%s, categoria=%s, subcategoria=%s, descricao=%s, valor=%s, conta=%s, forma_pagamento=%s, status=%s
+        WHERE id=%s AND user_id=%s
+    ''', (dados['data'], dados['tipo'], dados['categoria'], dados['subcategoria'], dados['descricao'], dados['valor'], dados['conta'], dados['forma_pagamento'], dados['status'], id_lancamento, user_id))
+    conn.commit()
+    conn.close()
+    return True
+
 def carregar_dados(user_id):
     conn = get_connection()
     df = pd.read_sql_query("SELECT * FROM lancamentos WHERE user_id = %s", conn, params=(user_id,))
@@ -221,6 +231,18 @@ def salvar_investimento(user_id, dados: dict):
     conn.commit()
     conn.close()
 
+def atualizar_investimento(user_id, id_inv, dados: dict):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('''
+        UPDATE investimentos
+        SET data=%s, ticker=%s, tipo_operacao=%s, classe=%s, quantidade=%s, preco_unitario=%s, taxas=%s, total_operacao=%s, notas=%s
+        WHERE id=%s AND user_id=%s
+    ''', (dados['data'], dados['ticker'], dados['tipo_operacao'], dados['classe'], dados['quantidade'], dados['preco_unitario'], dados['taxas'], dados['total_operacao'], dados['notas'], id_inv, user_id))
+    conn.commit()
+    conn.close()
+    return True
+
 def carregar_investimentos(user_id):
     conn = get_connection()
     df = pd.read_sql_query("SELECT * FROM investimentos WHERE user_id = %s", conn, params=(user_id,))
@@ -242,6 +264,7 @@ def excluir_investimento(user_id, id_investimento):
 def salvar_meta(user_id, categoria, valor):
     conn = get_connection()
     c = conn.cursor()
+    # ON CONFLICT garante que se a meta já existir, ela será atualizada (Editada)
     c.execute('''
         INSERT INTO metas (user_id, categoria, valor_meta) VALUES (%s, %s, %s)
         ON CONFLICT (user_id, categoria) DO UPDATE SET valor_meta = EXCLUDED.valor_meta
@@ -263,7 +286,7 @@ def excluir_meta(user_id, categoria):
     conn.close()
     return True
 
-# --- NOVAS FUNÇÕES: CARTÕES DE CRÉDITO ---
+# --- FUNÇÕES: CARTÕES DE CRÉDITO ---
 
 def salvar_cartao(user_id, nome, fechamento, vencimento):
     conn = get_connection()
@@ -284,7 +307,6 @@ def carregar_cartoes(user_id):
 def excluir_cartao(user_id, cartao_id):
     conn = get_connection()
     c = conn.cursor()
-    # Primeiro apaga os lançamentos atrelados para não dar erro de chave estrangeira
     c.execute("DELETE FROM lancamentos_cartao WHERE cartao_id=%s AND user_id=%s", (cartao_id, user_id))
     c.execute("DELETE FROM cartoes_credito WHERE id=%s AND user_id=%s", (cartao_id, user_id))
     conn.commit()
@@ -292,44 +314,30 @@ def excluir_cartao(user_id, cartao_id):
     return True
 
 def salvar_compra_credito(user_id, cartao_id, data_compra, descricao, categoria, valor_total, qtd_parcelas, dia_fechamento):
-    """
-    Gera automaticamente as parcelas nas datas corretas de fatura.
-    """
     conn = get_connection()
     c = conn.cursor()
-    
     valor_parcela = valor_total / qtd_parcelas
     data_obj = pd.to_datetime(data_compra)
-    
-    # Define a data da primeira fatura
-    # Se comprou ANTES do fechamento, cai neste mês. Se DEPOIS, cai no próximo.
     dia_compra = data_obj.day
     mes_atual = data_obj.replace(day=1)
     
     if dia_compra >= dia_fechamento:
-        # Pula para o próximo mês
         mes_referencia = (mes_atual + pd.DateOffset(months=1)).date()
     else:
         mes_referencia = mes_atual.date()
 
-    # Loop para criar as N parcelas
     for i in range(qtd_parcelas):
         c.execute('''
             INSERT INTO lancamentos_cartao 
             (user_id, cartao_id, data_compra, descricao, categoria, valor_parcela, parcela_numero, qtd_parcelas, mes_fatura)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         ''', (user_id, cartao_id, data_compra, descricao, categoria, valor_parcela, i+1, qtd_parcelas, mes_referencia))
-        
-        # Avança o mês da referência para a próxima parcela
         mes_referencia = (pd.to_datetime(mes_referencia) + pd.DateOffset(months=1)).date()
 
     conn.commit()
     conn.close()
 
 def carregar_fatura(user_id, cartao_id, mes_fatura_str):
-    """
-    Carrega os itens de uma fatura específica (Ex: mes_fatura_str = '2025-02-01')
-    """
     conn = get_connection()
     sql = """
         SELECT * FROM lancamentos_cartao 
@@ -339,7 +347,19 @@ def carregar_fatura(user_id, cartao_id, mes_fatura_str):
     conn.close()
     return df
 
-# --- NOVAS FUNÇÕES: RECORRÊNCIAS ---
+def atualizar_item_fatura(user_id, id_item, nova_descricao, novo_valor, nova_data_compra):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('''
+        UPDATE lancamentos_cartao
+        SET descricao=%s, valor_parcela=%s, data_compra=%s
+        WHERE id=%s AND user_id=%s
+    ''', (nova_descricao, novo_valor, nova_data_compra, id_item, user_id))
+    conn.commit()
+    conn.close()
+    return True
+
+# --- FUNÇÕES: RECORRÊNCIAS ---
 
 def salvar_recorrencia(user_id, nome, valor, categoria, dia_vencimento, tipo):
     conn = get_connection()
@@ -351,6 +371,18 @@ def salvar_recorrencia(user_id, nome, valor, categoria, dia_vencimento, tipo):
     conn.commit()
     conn.close()
 
+def atualizar_recorrencia(user_id, id_rec, nome, valor, categoria, dia_vencimento, tipo):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('''
+        UPDATE recorrencias 
+        SET nome=%s, valor=%s, categoria=%s, dia_vencimento=%s, tipo=%s
+        WHERE id=%s AND user_id=%s
+    ''', (nome, valor, categoria, dia_vencimento, tipo, id_rec, user_id))
+    conn.commit()
+    conn.close()
+    return True
+
 def carregar_recorrencias(user_id):
     conn = get_connection()
     df = pd.read_sql_query("SELECT * FROM recorrencias WHERE user_id = %s", conn, params=(user_id,))
@@ -361,18 +393,6 @@ def excluir_recorrencia(user_id, id_rec):
     conn = get_connection()
     c = conn.cursor()
     c.execute("DELETE FROM recorrencias WHERE id=%s AND user_id=%s", (id_rec, user_id))
-    conn.commit()
-    conn.close()
-    return True
-
-def atualizar_recorrencia(user_id, id_rec, nome, valor, categoria, dia_vencimento, tipo):
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute('''
-        UPDATE recorrencias 
-        SET nome=%s, valor=%s, categoria=%s, dia_vencimento=%s, tipo=%s
-        WHERE id=%s AND user_id=%s
-    ''', (nome, valor, categoria, dia_vencimento, tipo, id_rec, user_id))
     conn.commit()
     conn.close()
     return True
