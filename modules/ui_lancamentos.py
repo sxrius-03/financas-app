@@ -33,11 +33,9 @@ def show_lancamentos():
                 "Igreja": ["Dízimo", "Oferta", "Pacto", "Direcionado"],
             },
             "Receita": {
-                "Bolsa": ["PIBIC"],
-                "Trabalho Principal": ["Salário Líquido", "Adiantamento", "13º Salário", "Férias"],
+                "Trabalho Principal": ["Salário Líquido", "Adiantamento", "13º Salário", "Férias", "Bolsa de Estudos"],
                 "Trabalho Extra": ["Freelance", "Consultoria", "Venda de Itens", "Cashback"],
                 "Investimentos": ["Dividendos", "Juros", "Aluguel Recebido"],
-                "Para Pagar Parcelas": ["Adiantamento Para Contas"],
             }
         }
 
@@ -54,9 +52,33 @@ def show_lancamentos():
         
         descricao = st.text_input("Descrição", placeholder="Ex: Jantar no Outback")
         
+        # --- LINHA DE VALORES E CONTA (LÓGICA NOVA) ---
         col5, col6, col7 = st.columns(3)
+        
+        # Coluna 5: Valor
         valor = col5.number_input("Valor (R$)", min_value=0.01, format="%.2f", step=10.00)
-        conta = col6.selectbox("Conta/Origem", ["Nubank","Sicredi", "Banco do Brasil", "Bradesco", "Itaú", "Carteira", "Vale Alimentação", "Investimento"], key="sb_conta")
+        
+        # Coluna 6: Forma de Pagamento e Instituição (Condicional)
+        with col6:
+            metodo_pagamento = st.selectbox(
+                "Forma de Pagamento", 
+                ["PIX", "Transferência Bancária", "Cartão de Crédito", "Cartão de Débito", "Boleto", "Dinheiro", "Cheque", "Vale Alimentação"],
+                key="sb_metodo"
+            )
+            
+            # Lógica: Se for meio eletrônico, pergunta qual banco. Se for dinheiro, é Carteira.
+            bancos_disponiveis = ["Nubank", "Sicredi", "Sicoob", "BNDES", "Banco do Brasil", "Bradesco", "Itaú", "Santander", "Caixa", "Inter", "C6 Bank", "Investimento"]
+            
+            if metodo_pagamento in ["PIX", "Transferência Bancária", "Cartão de Crédito", "Cartão de Débito", "Boleto"]:
+                instituicao = st.selectbox("Instituição Financeira", bancos_disponiveis, key="sb_instituicao")
+                conta_final = instituicao
+            elif metodo_pagamento == "Vale Alimentação":
+                conta_final = "Vale Alimentação"
+            else:
+                # Dinheiro ou Cheque
+                conta_final = "Carteira"
+
+        # Coluna 7: Status
         status = col7.selectbox("Status", ["Pago/Recebido", "Pendente", "Agendado"], key="sb_status")
         
         st.markdown("---")
@@ -69,11 +91,10 @@ def show_lancamentos():
                 "subcategoria": subcategoria,
                 "descricao": descricao,
                 "valor": valor,
-                "conta": conta,
-                "forma_pagamento": "Padrão",
+                "conta": conta_final,          # Salva o Banco ou Carteira
+                "forma_pagamento": metodo_pagamento, # Salva se foi PIX, TED, etc.
                 "status": status
             }
-            # ATUALIZADO: Passando user_id
             salvar_lancamento(user_id, novo_dado)
             st.toast("Lançamento salvo com sucesso!", icon="✅")
 
@@ -81,13 +102,12 @@ def show_lancamentos():
         st.divider()
         st.subheader("Últimos Registros")
         
-        # ATUALIZADO: Passando user_id
         df = carregar_dados(user_id)
         if not df.empty:
             df = df.sort_values(by="data", ascending=False)
             
             st.dataframe(
-                df[['data', 'tipo', 'categoria', 'valor', 'status']].head(20),
+                df[['data', 'tipo', 'categoria', 'valor', 'conta', 'status']].head(20), # Adicionei 'conta' na visualização
                 use_container_width=True,
                 hide_index=True,
                 height=300,
@@ -103,7 +123,6 @@ def show_lancamentos():
     with tab_gerenciar:
         st.header("🗂️ Histórico Completo")
         
-        # ATUALIZADO: Passando user_id
         df = carregar_dados(user_id)
         
         if df.empty:
@@ -148,7 +167,6 @@ def show_lancamentos():
                     
                     col_btn1, col_btn2 = st.columns([1, 4])
                     if col_btn1.button("❌ Excluir Item", type="secondary"):
-                        # ATUALIZADO: Passando user_id
                         sucesso = excluir_lancamento(user_id, id_para_excluir)
                         if sucesso:
                             st.success("Item excluído! Atualizando...")
