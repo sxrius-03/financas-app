@@ -101,3 +101,4 @@ def show_ferramentas():
             col_b.metric("Tempo Total", f"{(mes_atual-1)/12:.1f} anos")
             if amort_extra > 0:
                 col_b.success(f"Você economizou {tempo_reduzido} meses pagando extra!")
+                
