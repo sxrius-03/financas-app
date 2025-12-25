@@ -6,3 +6,5 @@ streamlit-option-menu
 psycopg2-binary
 bcrypt
 sqlalchemy
+extra-streamlit-components
+uuid
