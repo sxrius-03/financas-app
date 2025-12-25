@@ -1,7 +1,6 @@
 import streamlit as st
-import extra_streamlit_components as stx  # <--- BIBLIOTECA DE COOKIES
+import extra_streamlit_components as stx
 from streamlit_option_menu import option_menu
-# Importar módulos e funções novas de sessão
 from modules.database import init_db, criar_usuario, verificar_login, criar_sessao, validar_sessao, apagar_sessao
 import modules.ui_lancamentos as ui_lancamentos
 import modules.ui_dashboard as ui_dashboard
@@ -24,8 +23,9 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# 2. Inicializar Gerenciador de Cookies (Deve ser feito no topo)
-cookie_manager = stx.CookieManager()
+# 2. Inicializar Gerenciador de Cookies
+# Adicionei uma chave fixa para evitar recarregamentos desnecessários
+cookie_manager = stx.CookieManager(key="cookie_manager")
 
 # Inicializar Estado de Sessão
 if 'logged_in' not in st.session_state:
@@ -36,9 +36,10 @@ if 'user_name' not in st.session_state:
     st.session_state['user_name'] = ""
 
 # 3. Lógica de Auto-Login (Verificar Cookie)
-# Só verifica se ainda não estiver logado na sessão atual
 if not st.session_state['logged_in']:
-    time.sleep(0.5) # Pequeno delay para garantir carregamento do cookie
+    # Pequeno delay para garantir que o componente de cookie carregou
+    time.sleep(0.5) 
+    
     cookie_token = cookie_manager.get(cookie="financas_token")
     
     if cookie_token:
@@ -47,7 +48,9 @@ if not st.session_state['logged_in']:
             st.session_state['logged_in'] = True
             st.session_state['user_id'] = user_data['id']
             st.session_state['user_name'] = user_data['name']
-            st.toast(f"Bem-vindo de volta, {user_data['name']}!", icon="👋")
+            # --- A CORREÇÃO ESTÁ AQUI ---
+            # Força o recarregamento imediato para desenhar o menu lateral corretamente
+            st.rerun() 
 
 # --- TELA DE LOGIN / CADASTRO ---
 if not st.session_state['logged_in']:
@@ -74,7 +77,6 @@ if not st.session_state['logged_in']:
                         st.session_state['user_id'] = dados_user['id']
                         st.session_state['user_name'] = dados_user['name']
                         
-                        # Se marcou "Manter conectado", cria o cookie
                         if manter_conectado:
                             token, validade = criar_sessao(dados_user['id'])
                             if token:
@@ -98,12 +100,11 @@ if not st.session_state['logged_in']:
                         st.error("Erro: Usuário já existe.")
 
 else:
-    # --- ÁREA LOGADA ---
+    # --- ÁREA LOGADA (Menu Lateral deve aparecer agora) ---
     with st.sidebar:
         st.write(f"👤 **{st.session_state['user_name']}**")
         
         if st.button("Sair (Logout)"):
-            # Limpar sessão no banco e apagar cookie
             token_atual = cookie_manager.get("financas_token")
             if token_atual:
                 apagar_sessao(token_atual)
@@ -129,6 +130,7 @@ else:
             }
         )
 
+    # Roteamento
     if selected == "Lançamentos":
         ui_lancamentos.show_lancamentos()
     elif selected == "Dashboard":
