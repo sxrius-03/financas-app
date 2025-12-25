@@ -364,3 +364,15 @@ def excluir_recorrencia(user_id, id_rec):
     conn.commit()
     conn.close()
     return True
+
+def atualizar_recorrencia(user_id, id_rec, nome, valor, categoria, dia_vencimento, tipo):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('''
+        UPDATE recorrencias 
+        SET nome=%s, valor=%s, categoria=%s, dia_vencimento=%s, tipo=%s
+        WHERE id=%s AND user_id=%s
+    ''', (nome, valor, categoria, dia_vencimento, tipo, id_rec, user_id))
+    conn.commit()
+    conn.close()
+    return True

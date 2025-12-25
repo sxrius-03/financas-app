@@ -2,6 +2,8 @@ import streamlit as st
 from datetime import datetime
 import pandas as pd
 from modules.database import salvar_lancamento, carregar_dados, excluir_lancamento
+# IMPORTAÇÃO CENTRALIZADA
+from modules.constants import CATEGORIAS
 
 def show_lancamentos():
     # --- PEGAR USUÁRIO LOGADO ---
@@ -20,25 +22,8 @@ def show_lancamentos():
         st.header("📝 Registrar Movimentação (Caixa)")
         st.caption("Use esta tela para movimentações que afetam seu saldo IMEDIATAMENTE (Débito, PIX, Dinheiro). Compras no Crédito devem ir para o menu 'Cartões'.")
 
-        mapa_categorias = {
-            "Despesa": {
-                "Moradia": ["Aluguel", "Energia", "Água", "Internet", "Manutenção", "Condomínio"],
-                "Alimentação": ["Supermercado", "Restaurante", "Ifood/Delivery", "Café/Lanche"],
-                "Transporte": ["Combustível", "Uber/99", "Manutenção Veículo", "IPVA/Licenciamento", "Transporte Público"],
-                "Lazer": ["Streaming", "Cinema/Teatro", "Viagem", "Bar/Balada", "Jogos"],
-                "Educação": ["Faculdade", "Cursos Online", "Livros/Material", "Idiomas"],
-                "Tecnologia": ["Hardware/Peças", "Software/Apps", "Nuvem/Servidores", "Eletrônicos"],
-                "Saúde": ["Farmácia", "Consulta Médica", "Academia", "Terapia", "Plano de Saúde"],
-                "Pessoal": ["Roupas", "Cosméticos", "Cabeleireiro", "Presentes"],
-                "Financeiro": ["Taxas Bancárias", "Impostos", "Dívidas", "Pagamento de Fatura"], # Alterado aqui
-                "Igreja": ["Dízimo", "Oferta", "Pacto", "Direcionado"],
-            },
-            "Receita": {
-                "Trabalho Principal": ["Salário Líquido", "Adiantamento", "13º Salário", "Férias", "Bolsa de Estudos"],
-                "Trabalho Extra": ["Freelance", "Consultoria", "Venda de Itens", "Cashback"],
-                "Investimentos": ["Dividendos", "Juros", "Aluguel Recebido"],
-            }
-        }
+        # Usa as categorias do arquivo central constants.py
+        mapa_categorias = CATEGORIAS
 
         col1, col2 = st.columns(2)
         data = col1.date_input("Data", datetime.today())
@@ -61,7 +46,6 @@ def show_lancamentos():
         
         # Coluna 6: Forma de Pagamento e Instituição
         with col6:
-            # REMOVIDO "Cartão de Crédito" desta lista
             metodo_pagamento = st.selectbox(
                 "Forma de Pagamento", 
                 ["PIX", "Transferência Bancária", "Cartão de Débito", "Boleto", "Dinheiro", "Cheque", "Vale Alimentação"],

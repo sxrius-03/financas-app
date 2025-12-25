@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, date
 from modules.database import salvar_cartao, carregar_cartoes, excluir_cartao, salvar_compra_credito, carregar_fatura
+# IMPORTAÇÃO CENTRALIZADA
+from modules.constants import LISTA_CATEGORIAS_DESPESA
 
 def show_cartoes():
     if 'user_id' not in st.session_state: return
@@ -22,10 +24,9 @@ def show_cartoes():
             # Selecionar Cartão pelo Nome
             cartao_selecionado = c1.selectbox("Selecione o Cartão", df_cartoes['nome_cartao'].tolist())
             
-            # --- CORREÇÃO DO ERRO (Convertendo ID do banco para número simples) ---
             # Pegamos o ID interno (Ex: 1, 2) correspondente ao nome escolhido
             id_raw = df_cartoes[df_cartoes['nome_cartao'] == cartao_selecionado]['id'].values[0]
-            id_cartao = int(id_raw) # <--- O Python precisa disso para não travar
+            id_cartao = int(id_raw)
             
             # Selecionar Mês da Fatura
             mes_atual = date.today().replace(day=1)
@@ -75,7 +76,9 @@ def show_cartoes():
                 data_compra = c2.date_input("Data da Compra", date.today())
                 
                 desc = st.text_input("Descrição (Loja/Item)")
-                cat = st.selectbox("Categoria", ["Alimentação", "Transporte", "Lazer", "Compras", "Serviços", "Viagem", "Outros"])
+                
+                # AGORA USA A LISTA CENTRAL
+                cat = st.selectbox("Categoria", options=LISTA_CATEGORIAS_DESPESA)
                 
                 c3, c4 = st.columns(2)
                 valor_total = c3.number_input("Valor TOTAL da Compra (R$)", min_value=0.01)
@@ -85,7 +88,6 @@ def show_cartoes():
                     # Pega informações do cartão escolhido
                     info_cartao = df_cartoes[df_cartoes['nome_cartao'] == cartao_nome].iloc[0]
                     
-                    # CORREÇÃO AQUI TAMBÉM:
                     id_cartao_submit = int(info_cartao['id'])
                     dia_fechamento_submit = int(info_cartao['dia_fechamento'])
                     

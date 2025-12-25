@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 from modules.database import carregar_dados, salvar_meta, carregar_metas, excluir_meta
+# IMPORTAÇÃO CENTRALIZADA
+from modules.constants import LISTA_CATEGORIAS_DESPESA
 
 def show_orcamento():
     # --- PEGAR USUÁRIO LOGADO ---
@@ -85,18 +87,14 @@ def show_orcamento():
         
         with col_add:
             st.subheader("➕ Nova Meta")
-            categorias_padrao = [
-                "Moradia", "Alimentação", "Transporte", "Lazer", 
-                "Educação", "Tecnologia", "Saúde", "Pessoal", "Financeiro", "Igreja"
-            ]
             
+            # USANDO LISTA CENTRALIZADA
             with st.form("form_meta"):
-                cat_selecionada = st.selectbox("Escolha a Categoria", categorias_padrao)
+                cat_selecionada = st.selectbox("Escolha a Categoria", options=LISTA_CATEGORIAS_DESPESA)
                 valor_meta = st.number_input("Limite Mensal (R$)", min_value=0.0)
                 
                 if st.form_submit_button("💾 Salvar / Atualizar"):
                     if valor_meta > 0:
-                        # ATUALIZADO: Passando user_id
                         salvar_meta(user_id, cat_selecionada, valor_meta)
                         st.success(f"Meta de {cat_selecionada} salva!")
                         st.rerun()
@@ -115,7 +113,6 @@ def show_orcamento():
                 meta_para_excluir = st.selectbox("Categoria Cadastrada", lista_metas_existentes)
                 
                 if st.button("❌ Apagar Meta Selecionada"):
-                    # ATUALIZADO: Passando user_id
                     sucesso = excluir_meta(user_id, meta_para_excluir)
                     if sucesso:
                         st.success(f"Meta de {meta_para_excluir} removida.")
