@@ -1,0 +1,8 @@
+streamlit
+pandas
+plotly
+yfinance
+streamlit-option-menu
+psycopg2-binary
+bcrypt
+sqlalchemy
