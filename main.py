@@ -7,6 +7,9 @@ import modules.ui_dashboard as ui_dashboard
 import modules.ui_investimentos as ui_investimentos
 import modules.ui_orcamento as ui_orcamento
 import time
+import modules.ui_cartoes as ui_cartoes
+import modules.ui_recorrencias as ui_recorrencias
+import modules.ui_ferramentas as ui_ferramentas
 
 # 1. Configuração da Página
 st.set_page_config(page_title="Sistema Financeiro", page_icon="💰", layout="wide")
@@ -118,8 +121,10 @@ else:
         
         selected = option_menu(
             menu_title="Menu Principal",
-            options=["Dashboard", "Lançamentos", "Investimentos", "Orçamento"],
-            icons=["graph-up-arrow", "pencil-square", "bank", "calculator"],
+            # Adicionei Cartões, Recorrências e Ferramentas na lista
+             options=["Dashboard", "Lançamentos", "Cartões", "Investimentos", "Orçamento", "Recorrências", "Ferramentas"],
+            # Adicionei ícones correspondentes (Bootstrap Icons)
+            icons=["graph-up-arrow", "pencil-square", "credit-card", "bank", "calculator", "arrow-repeat", "tools"],
             menu_icon="cast",
             default_index=0,
             styles={
@@ -139,3 +144,9 @@ else:
         ui_investimentos.show_investimentos()
     elif selected == "Orçamento":
         ui_orcamento.show_orcamento()
+    elif selected == "Cartões":
+        ui_cartoes.show_cartoes()
+    elif selected == "Recorrências":
+        ui_recorrencias.show_recorrencias()
+    elif selected == "Ferramentas":
+        ui_ferramentas.show_ferramentas()
