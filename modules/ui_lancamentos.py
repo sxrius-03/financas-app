@@ -29,7 +29,7 @@ def show_lancamentos():
                 "Tecnologia": ["Hardware/Peças", "Software/Apps", "Nuvem/Servidores", "Eletrônicos"],
                 "Saúde": ["Farmácia", "Consulta Médica", "Academia", "Terapia", "Plano de Saúde"],
                 "Pessoal": ["Roupas", "Cosméticos", "Cabeleireiro", "Presentes"],
-                "Financeiro": ["Taxas Bancárias", "Impostos", "Dívidas"],
+                "Financeiro": ["Taxas Bancárias", "Impostos", "Dívidas", "Cartão de Crédito"],
                 "Igreja": ["Dízimo", "Oferta", "Pacto", "Direcionado"],
             },
             "Receita": {
