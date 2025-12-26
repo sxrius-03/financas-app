@@ -10,7 +10,7 @@ CATEGORIAS = {
         "Pessoal": ["Roupas", "Cosméticos", "Cabeleireiro", "Presentes"],
         "Financeiro": ["Taxas Bancárias", "Impostos", "Dívidas", "Pagamento de Fatura"],
         "Igreja": ["Dízimo", "Oferta", "Pacto", "Direcionado"],
-        "Investimentos (Aportes)": ["Envio para Corretora", "Aplicação Renda Fixa", "Compra de Ações", "Reserva de Emergência"], 
+        "Investimentos (Aportes)": ["Reserva de Emergência", "Envio para Corretora", "Aplicação Renda Fixa", "Compra de Ações"], 
         "Outros": ["Outros"],
     },
     "Receita": {
@@ -18,7 +18,7 @@ CATEGORIAS = {
         "Trabalho Extra": ["Freelance", "Consultoria", "Venda de Itens", "Cashback"],
         "Recebimentos": ["Recebimento"],
         "Rendimentos": ["Dividendos", "Juros sobre Capital", "Aluguel de FIIs"],
-        "Resgates": ["Resgate Renda Fixa", "Venda de Ações (Com Lucro)", "Venda de Ações (Principal)", "Resgate Reserva de Emergência"],
+        "Resgates": ["Resgate Renda Fixa", "Resgate Reserva de Emergência", "Venda de Ações (Com Lucro)", "Venda de Ações (Principal)"],
     }
 }
 
