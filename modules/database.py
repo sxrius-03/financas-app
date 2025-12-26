@@ -1,4 +1,4 @@
-import streamlit as st
+=import streamlit as st
 import pandas as pd
 import psycopg2
 import bcrypt
@@ -115,6 +115,20 @@ def init_db():
             dia_vencimento INTEGER,
             tipo TEXT,
             ativa BOOLEAN DEFAULT TRUE
+        )
+    ''')
+
+    # 9. Controle de Faturas (NOVA)
+    # Rastreia se uma fatura específica (Mês/Ano + Cartão) foi paga
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS faturas_controle (
+            user_id INTEGER REFERENCES users(id),
+            cartao_id INTEGER REFERENCES cartoes_credito(id),
+            mes_referencia DATE, -- Data base da fatura (Ex: 01/05/2025)
+            status TEXT, -- 'Paga', 'Paga Externo'
+            data_pagamento DATE,
+            valor_pago NUMERIC,
+            PRIMARY KEY (user_id, cartao_id, mes_referencia)
         )
     ''')
     
@@ -264,7 +278,6 @@ def excluir_investimento(user_id, id_investimento):
 def salvar_meta(user_id, categoria, valor):
     conn = get_connection()
     c = conn.cursor()
-    # ON CONFLICT garante que se a meta já existir, ela será atualizada (Editada)
     c.execute('''
         INSERT INTO metas (user_id, categoria, valor_meta) VALUES (%s, %s, %s)
         ON CONFLICT (user_id, categoria) DO UPDATE SET valor_meta = EXCLUDED.valor_meta
@@ -309,6 +322,8 @@ def excluir_cartao(user_id, cartao_id):
     c = conn.cursor()
     c.execute("DELETE FROM lancamentos_cartao WHERE cartao_id=%s AND user_id=%s", (cartao_id, user_id))
     c.execute("DELETE FROM cartoes_credito WHERE id=%s AND user_id=%s", (cartao_id, user_id))
+    # Também apaga o status da fatura
+    c.execute("DELETE FROM faturas_controle WHERE cartao_id=%s AND user_id=%s", (cartao_id, user_id))
     conn.commit()
     conn.close()
     return True
@@ -358,6 +373,37 @@ def atualizar_item_fatura(user_id, id_item, nova_descricao, novo_valor, nova_dat
     conn.commit()
     conn.close()
     return True
+
+# --- FUNÇÕES: CONTROLE DE PAGAMENTO DE FATURAS (NOVO) ---
+
+def registrar_pagamento_fatura(user_id, cartao_id, mes_referencia, status, valor, data_pagamento):
+    """
+    Registra que uma fatura foi paga (ou marcada como paga).
+    OBS: Se for 'Paga', deve-se chamar também salvar_lancamento na UI para abater do saldo.
+    """
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('''
+        INSERT INTO faturas_controle (user_id, cartao_id, mes_referencia, status, valor_pago, data_pagamento)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        ON CONFLICT (user_id, cartao_id, mes_referencia) 
+        DO UPDATE SET status = EXCLUDED.status, valor_pago = EXCLUDED.valor_pago, data_pagamento = EXCLUDED.data_pagamento
+    ''', (user_id, cartao_id, mes_referencia, status, valor, data_pagamento))
+    conn.commit()
+    conn.close()
+
+def obter_status_fatura(user_id, cartao_id, mes_referencia):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('''
+        SELECT status, valor_pago, data_pagamento FROM faturas_controle
+        WHERE user_id = %s AND cartao_id = %s AND mes_referencia = %s
+    ''', (user_id, cartao_id, mes_referencia))
+    result = c.fetchone()
+    conn.close()
+    if result:
+        return {"status": result[0], "valor": result[1], "data": result[2]}
+    return None
 
 # --- FUNÇÕES: RECORRÊNCIAS ---
 
