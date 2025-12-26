@@ -10,14 +10,16 @@ CATEGORIAS = {
         "Pessoal": ["Roupas", "Cosméticos", "Cabeleireiro", "Presentes"],
         "Financeiro": ["Taxas Bancárias", "Impostos", "Dívidas", "Pagamento de Fatura"],
         "Igreja": ["Dízimo", "Oferta", "Pacto", "Direcionado"],
+        "Investimentos (Aportes)": ["Envio para Corretora", "Aplicação Renda Fixa", "Compra de Ações", "Reserva de Emergência"], 
     },
     "Receita": {
         "Trabalho Principal": ["Salário Líquido", "Adiantamento", "13º Salário", "Férias", "Bolsa de Estudos"],
         "Trabalho Extra": ["Freelance", "Consultoria", "Venda de Itens", "Cashback"],
-        "Investimentos": ["Dividendos", "Juros", "Aluguel Recebido"],
+        "Rendimentos": ["Dividendos", "Juros sobre Capital", "Aluguel de FIIs"],
+        "Resgates": ["Resgate Renda Fixa", "Venda de Ações (Com Lucro)", "Venda de Ações (Principal)"],
     }
 }
 
-# Lista plana de todas as categorias de Despesa (para facilitar dropdowns simples)
+# Listas planas para facilitar os menus
 LISTA_CATEGORIAS_DESPESA = list(CATEGORIAS["Despesa"].keys())
 LISTA_CATEGORIAS_RECEITA = list(CATEGORIAS["Receita"].keys())
