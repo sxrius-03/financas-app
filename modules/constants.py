@@ -6,7 +6,7 @@ CATEGORIAS = {
         "Lazer": ["Streaming", "Cinema/Teatro", "Viagem", "Bar/Balada", "Jogos"],
         "Educação": ["Faculdade", "Cursos Online", "Livros/Material", "Idiomas"],
         "Tecnologia": ["Hardware/Peças", "Software/Apps", "Nuvem/Servidores", "Eletrônicos"],
-        "Saúde": ["Farmácia", "Consulta Médica", "Academia", "Terapia", "Plano de Saúde"],
+        "Saúde": ["Farmácia", "Consulta Médica", "Academia", "Terapia", "Plano de Saúde", "Dentista"],
         "Pessoal": ["Roupas", "Cosméticos", "Cabeleireiro", "Presentes"],
         "Financeiro": ["Taxas Bancárias", "Impostos", "Dívidas", "Pagamento de Fatura"],
         "Igreja": ["Dízimo", "Oferta", "Pacto", "Direcionado"],
