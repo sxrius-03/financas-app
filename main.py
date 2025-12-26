@@ -6,10 +6,11 @@ import modules.ui_lancamentos as ui_lancamentos
 import modules.ui_dashboard as ui_dashboard
 import modules.ui_investimentos as ui_investimentos
 import modules.ui_orcamento as ui_orcamento
-import time
 import modules.ui_cartoes as ui_cartoes
 import modules.ui_recorrencias as ui_recorrencias
 import modules.ui_ferramentas as ui_ferramentas
+import modules.notifications as notifications  # <--- MÓDULO NOVO DE NOTIFICAÇÕES
+import time
 
 # 1. Configuração da Página
 st.set_page_config(page_title="Sistema Financeiro", page_icon="💰", layout="wide")
@@ -27,7 +28,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # 2. Inicializar Gerenciador de Cookies
-# Adicionei uma chave fixa para evitar recarregamentos desnecessários
 cookie_manager = stx.CookieManager(key="cookie_manager")
 
 # Inicializar Estado de Sessão
@@ -40,7 +40,6 @@ if 'user_name' not in st.session_state:
 
 # 3. Lógica de Auto-Login (Verificar Cookie)
 if not st.session_state['logged_in']:
-    # Pequeno delay para garantir que o componente de cookie carregou
     time.sleep(0.5) 
     
     cookie_token = cookie_manager.get(cookie="financas_token")
@@ -51,8 +50,6 @@ if not st.session_state['logged_in']:
             st.session_state['logged_in'] = True
             st.session_state['user_id'] = user_data['id']
             st.session_state['user_name'] = user_data['name']
-            # --- A CORREÇÃO ESTÁ AQUI ---
-            # Força o recarregamento imediato para desenhar o menu lateral corretamente
             st.rerun() 
 
 # --- TELA DE LOGIN / CADASTRO ---
@@ -103,7 +100,7 @@ if not st.session_state['logged_in']:
                         st.error("Erro: Usuário já existe.")
 
 else:
-    # --- ÁREA LOGADA (Menu Lateral deve aparecer agora) ---
+    # --- ÁREA LOGADA ---
     with st.sidebar:
         st.write(f"👤 **{st.session_state['user_name']}**")
         
@@ -119,11 +116,12 @@ else:
             
         st.divider()
         
+        # --- EXIBIR NOTIFICAÇÕES NA BARRA LATERAL ---
+        notifications.exibir_notificacoes_na_sidebar(st.session_state['user_id'])
+        
         selected = option_menu(
             menu_title="Menu Principal",
-            # Adicionei Cartões, Recorrências e Ferramentas na lista
-             options=["Dashboard", "Lançamentos", "Cartões", "Investimentos", "Orçamento", "Recorrências", "Ferramentas"],
-            # Adicionei ícones correspondentes (Bootstrap Icons)
+            options=["Dashboard", "Lançamentos", "Cartões", "Investimentos", "Orçamento", "Recorrências", "Ferramentas"],
             icons=["graph-up-arrow", "pencil-square", "credit-card", "bank", "calculator", "arrow-repeat", "tools"],
             menu_icon="cast",
             default_index=0,

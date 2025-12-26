@@ -453,3 +453,22 @@ def excluir_recorrencia(user_id, id_rec):
     conn.commit()
     conn.close()
     return True
+
+# ------------------------ Notificações --------------------------
+
+def buscar_pendencias_proximas(user_id):
+    """
+    Busca lançamentos (Caixa) com status Pendente/Agendado para Hoje ou Amanhã.
+    """
+    conn = get_connection()
+    # Busca itens onde a data é Hoje OU Amanhã (INTERVAL '1 day')
+    sql = """
+        SELECT descricao, valor, data, conta 
+        FROM lancamentos 
+        WHERE user_id = %s 
+        AND status IN ('Pendente', 'Agendado')
+        AND data BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '1 day'
+    """
+    df = pd.read_sql_query(sql, conn, params=(user_id,))
+    conn.close()
+    return df
