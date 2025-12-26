@@ -20,15 +20,14 @@ def show_dashboard():
     df['data'] = pd.to_datetime(df['data'])
     df['Mes'] = df['data'].dt.month
     df['Ano'] = df['data'].dt.year
+    df['Dia'] = df['data'].dt.day
     
-    # Cores personalizadas
     color_map = {'Receita': '#00CC96', 'Despesa': '#EF553B'}
 
-    # Abas Principais
     tab_total, tab_anual, tab_mensal = st.tabs(["🌎 Visão Total (Acumulado)", "📅 Visão Anual", "📆 Visão Mensal"])
 
     # ===================================================
-    # ABA 1: VISÃO TOTAL (Tudo que já aconteceu)
+    # ABA 1: VISÃO TOTAL
     # ===================================================
     with tab_total:
         st.markdown("### Resumo Geral (Desde o Início)")
@@ -37,7 +36,6 @@ def show_dashboard():
         total_desp = df[df['tipo'] == 'Despesa']['valor'].sum()
         saldo_geral = total_rec - total_desp
         
-        # Big Numbers
         c1, c2, c3 = st.columns(3)
         c1.metric("Receita Total Histórica", f"R$ {total_rec:,.2f}")
         c2.metric("Despesa Total Histórica", f"R$ {total_desp:,.2f}", delta_color="inverse")
@@ -45,9 +43,7 @@ def show_dashboard():
         
         st.divider()
         
-        # Gráfico de Evolução Patrimonial (Linha do Tempo)
         df_tempo = df.groupby(['Ano', 'Mes', 'tipo'])['valor'].sum().reset_index()
-        # Cria uma coluna de data fictícia (dia 1) para o gráfico entender a ordem cronológica
         df_tempo['Data_Ref'] = pd.to_datetime(df_tempo['Ano'].astype(str) + '-' + df_tempo['Mes'].astype(str) + '-01')
         df_tempo = df_tempo.sort_values('Data_Ref')
         
@@ -85,7 +81,6 @@ def show_dashboard():
             
             g1, g2 = st.columns(2)
             
-            # Gráfico Barras Mês a Mês
             with g1:
                 df_barras = df_ano.groupby(['Mes', 'tipo'])['valor'].sum().reset_index()
                 mapa_mes = {1:'Jan', 2:'Fev', 3:'Mar', 4:'Abr', 5:'Mai', 6:'Jun', 7:'Jul', 8:'Ago', 9:'Set', 10:'Out', 11:'Nov', 12:'Dez'}
@@ -99,7 +94,6 @@ def show_dashboard():
                 )
                 st.plotly_chart(fig_bar, use_container_width=True)
             
-            # Gráfico de Categorias (Rosca) - Só Despesas
             with g2:
                 df_cat = df_ano[df_ano['tipo']=='Despesa'].groupby('categoria')['valor'].sum().reset_index()
                 if not df_cat.empty:
@@ -113,14 +107,12 @@ def show_dashboard():
                     st.info("Sem despesas para gráfico.")
 
     # ===================================================
-    # ABA 3: VISÃO MENSAL
+    # ABA 3: VISÃO MENSAL (COM GRÁFICOS NOVOS)
     # ===================================================
     with tab_mensal:
         c_filt1, c_filt2 = st.columns(2)
         
-        # Filtros independentes para esta aba
         sel_ano_m = c_filt1.selectbox("Ano", anos, key="sb_ano_mes")
-        
         meses_disp = {k:v for k,v in {1:"Janeiro", 2:"Fevereiro", 3:"Março", 4:"Abril", 5:"Maio", 6:"Junho", 7:"Julho", 8:"Agosto", 9:"Setembro", 10:"Outubro", 11:"Novembro", 12:"Dezembro"}.items()}
         mes_atual_idx = datetime.now().month - 1
         sel_mes_nome = c_filt2.selectbox("Mês", list(meses_disp.values()), index=mes_atual_idx, key="sb_mes_mes")
@@ -141,6 +133,36 @@ def show_dashboard():
             m1.metric("Receita", f"R$ {rec_m:,.2f}")
             m2.metric("Despesa", f"R$ {desp_m:,.2f}", delta_color="inverse")
             m3.metric("Saldo", f"R$ {saldo_m:,.2f}", delta=f"{saldo_m:,.2f}")
+            
+            st.divider()
+            
+            # --- NOVOS GRÁFICOS PARA VISÃO MENSAL ---
+            gm1, gm2 = st.columns(2)
+            
+            # Gráfico de Barras: Evolução Diária
+            with gm1:
+                df_dias = df_mes.groupby(['Dia', 'tipo'])['valor'].sum().reset_index()
+                fig_bar_dia = px.bar(
+                    df_dias, x='Dia', y='valor', color='tipo', barmode='group',
+                    title=f"Evolução Diária ({sel_mes_nome})",
+                    color_discrete_map=color_map, template="plotly_dark"
+                )
+                # Garante que mostre todos os dias que tem movimento
+                fig_bar_dia.update_xaxes(dtick=1) 
+                st.plotly_chart(fig_bar_dia, use_container_width=True)
+
+            # Gráfico de Rosca: Categorias do Mês
+            with gm2:
+                df_cat_mes = df_mes[df_mes['tipo']=='Despesa'].groupby('categoria')['valor'].sum().reset_index()
+                if not df_cat_mes.empty:
+                    fig_pie_mes = px.pie(
+                        df_cat_mes, values='valor', names='categoria', hole=0.4,
+                        title=f"Gastos por Categoria ({sel_mes_nome})",
+                        template="plotly_dark", color_discrete_sequence=px.colors.sequential.RdBu
+                    )
+                    st.plotly_chart(fig_pie_mes, use_container_width=True)
+                else:
+                    st.info("Sem despesas neste mês.")
             
             st.divider()
             

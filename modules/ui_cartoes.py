@@ -25,7 +25,10 @@ def show_cartoes():
         else:
             c1, c2 = st.columns(2)
             cartao_selecionado = c1.selectbox("Selecione o Cartão", df_cartoes['nome_cartao'].tolist())
-            id_cartao = int(df_cartoes[df_cartoes['nome_cartao'] == cartao_selecionado]['id'].values[0])
+            
+            # Converte ID para int nativo
+            id_raw = df_cartoes[df_cartoes['nome_cartao'] == cartao_selecionado]['id'].values[0]
+            id_cartao = int(id_raw)
             
             # Filtro de Mês
             mes_atual = date.today().replace(day=1)
@@ -33,7 +36,6 @@ def show_cartoes():
             try: opcoes_meses += [mes_atual.replace(year=mes_atual.year+1, month=m) for m in range(1, 13)]
             except: pass
             
-            # Seleciona o mês atual por padrão
             idx_mes_atual = 0
             for i, m in enumerate(opcoes_meses):
                 if m.month == mes_atual.month and m.year == mes_atual.year:
@@ -56,57 +58,51 @@ def show_cartoes():
             if df_fatura.empty:
                 st.info(f"Fatura vazia para este mês.")
             else:
-                total_fatura = df_fatura['valor_parcela'].sum()
+                # --- CORREÇÃO DO ERRO AQUI ---
+                # Convertemos explicitamente para float nativo do Python
+                total_fatura = float(df_fatura['valor_parcela'].sum())
                 
                 # --- CABEÇALHO DA FATURA ---
                 col_kpi1, col_kpi2, col_kpi3 = st.columns([2, 2, 3])
                 col_kpi1.metric("Total da Fatura", f"R$ {total_fatura:,.2f}")
                 
-                # Exibir Status
                 if status_info and status_info['status'] in ['Paga', 'Paga Externo']:
                     col_kpi2.success(f"STATUS: {status_info['status'].upper()}")
                     if status_info['data']:
                         data_pg = datetime.strptime(str(status_info['data']), "%Y-%m-%d").strftime("%d/%m/%Y")
                         col_kpi3.caption(f"Pago em: {data_pg} | Valor: R$ {status_info['valor']:,.2f}")
                 else:
-                    # Se for mês passado ou atual, provavelmente está pendente ou vencida
                     if mes_escolhido < mes_atual:
                         col_kpi2.error("STATUS: PENDENTE (ATRASADA?)")
                     else:
                         col_kpi2.warning("STATUS: EM ABERTO")
                     
-                    # --- BOTÕES DE PAGAMENTO ---
                     with col_kpi3:
                         with st.expander("💸 Opções de Pagamento"):
                             tab_pagar_sis, tab_pagar_ext = st.tabs(["Lançar no Caixa", "Já paguei antes"])
                             
-                            # Opção 1: Pagar e descontar do saldo
                             with tab_pagar_sis:
                                 with st.form(f"form_pagar_{id_cartao}"):
                                     st.write("Isso criará uma DESPESA no sistema.")
                                     conta_pag = st.selectbox("Conta de Saída", ["Nubank", "Bradesco", "Itaú", "Santander", "Caixa", "Inter", "Carteira"])
                                     data_pag = st.date_input("Data do Pagamento", date.today())
                                     if st.form_submit_button("Confirmar Pagamento"):
-                                        # 1. Cria a despesa
                                         dados_lanc = {
                                             "data": data_pag,
                                             "tipo": "Despesa",
                                             "categoria": "Financeiro",
                                             "subcategoria": "Pagamento de Fatura",
                                             "descricao": f"Fatura {cartao_selecionado} - {mes_escolhido.strftime('%m/%Y')}",
-                                            "valor": total_fatura,
+                                            "valor": total_fatura, # Agora é float puro, sem numpy
                                             "conta": conta_pag,
                                             "forma_pagamento": "Boleto/Automático",
                                             "status": "Pago/Recebido"
                                         }
                                         salvar_lancamento(user_id, dados_lanc)
-                                        
-                                        # 2. Marca a fatura como paga
                                         registrar_pagamento_fatura(user_id, id_cartao, mes_escolhido, "Paga", total_fatura, data_pag)
                                         st.success("Fatura paga e saldo atualizado!")
                                         st.rerun()
 
-                            # Opção 2: Apenas marcar (sem mexer no saldo)
                             with tab_pagar_ext:
                                 if st.button("Marcar como Paga (Sem alterar saldo)"):
                                     registrar_pagamento_fatura(user_id, id_cartao, mes_escolhido, "Paga Externo", total_fatura, date.today())
@@ -116,7 +112,6 @@ def show_cartoes():
                 st.markdown("---")
                 st.dataframe(df_fatura[['data_compra', 'descricao', 'parcela_numero', 'qtd_parcelas', 'valor_parcela']], use_container_width=True)
                 
-                # --- EDIÇÃO DE ITEM ---
                 if not (status_info and status_info['status'] in ['Paga', 'Paga Externo']):
                     with st.expander("✏️ Editar Item desta Fatura"):
                         opcoes_item = df_fatura.apply(lambda r: f"Item {r['id']} | {r['descricao']} - R$ {r['valor_parcela']:.2f}", axis=1)
