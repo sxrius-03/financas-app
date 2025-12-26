@@ -15,6 +15,7 @@ CATEGORIAS = {
     "Receita": {
         "Trabalho Principal": ["Salário Líquido", "Adiantamento", "13º Salário", "Férias", "Bolsa de Estudos"],
         "Trabalho Extra": ["Freelance", "Consultoria", "Venda de Itens", "Cashback"],
+        "Recebimentos": ["Recebimento"]
         "Rendimentos": ["Dividendos", "Juros sobre Capital", "Aluguel de FIIs"],
         "Resgates": ["Resgate Renda Fixa", "Venda de Ações (Com Lucro)", "Venda de Ações (Principal)", "Resgate Reserva de Emergência"],
     }
