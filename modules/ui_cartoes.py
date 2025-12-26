@@ -4,7 +4,8 @@ from datetime import datetime, date
 from modules.database import (
     salvar_cartao, carregar_cartoes, excluir_cartao, 
     salvar_compra_credito, carregar_fatura, atualizar_item_fatura,
-    registrar_pagamento_fatura, obter_status_fatura, salvar_lancamento
+    registrar_pagamento_fatura, obter_status_fatura, salvar_lancamento,
+    excluir_pagamento_fatura
 )
 from modules.constants import LISTA_CATEGORIAS_DESPESA
 
@@ -58,19 +59,27 @@ def show_cartoes():
             if df_fatura.empty:
                 st.info(f"Fatura vazia para este mês.")
             else:
-                # --- CORREÇÃO DO ERRO AQUI ---
-                # Convertemos explicitamente para float nativo do Python
                 total_fatura = float(df_fatura['valor_parcela'].sum())
                 
                 # --- CABEÇALHO DA FATURA ---
                 col_kpi1, col_kpi2, col_kpi3 = st.columns([2, 2, 3])
                 col_kpi1.metric("Total da Fatura", f"R$ {total_fatura:,.2f}")
                 
-                if status_info and status_info['status'] in ['Paga', 'Paga Externo']:
+                esta_paga = status_info and status_info['status'] in ['Paga', 'Paga Externo']
+                
+                if esta_paga:
                     col_kpi2.success(f"STATUS: {status_info['status'].upper()}")
                     if status_info['data']:
                         data_pg = datetime.strptime(str(status_info['data']), "%Y-%m-%d").strftime("%d/%m/%Y")
                         col_kpi3.caption(f"Pago em: {data_pg} | Valor: R$ {status_info['valor']:,.2f}")
+                    
+                    # --- BOTÃO PARA REABRIR (CANCELAR PAGAMENTO) ---
+                    with col_kpi3:
+                        if st.button("🔓 Reabrir Fatura (Cancelar Pagamento)", type="secondary"):
+                            excluir_pagamento_fatura(user_id, id_cartao, mes_escolhido)
+                            st.warning("Fatura reaberta! Se você lançou despesa no caixa, lembre-se de excluí-la manualmente.")
+                            st.rerun()
+
                 else:
                     if mes_escolhido < mes_atual:
                         col_kpi2.error("STATUS: PENDENTE (ATRASADA?)")
@@ -93,7 +102,7 @@ def show_cartoes():
                                             "categoria": "Financeiro",
                                             "subcategoria": "Pagamento de Fatura",
                                             "descricao": f"Fatura {cartao_selecionado} - {mes_escolhido.strftime('%m/%Y')}",
-                                            "valor": total_fatura, # Agora é float puro, sem numpy
+                                            "valor": total_fatura,
                                             "conta": conta_pag,
                                             "forma_pagamento": "Boleto/Automático",
                                             "status": "Pago/Recebido"
@@ -112,25 +121,28 @@ def show_cartoes():
                 st.markdown("---")
                 st.dataframe(df_fatura[['data_compra', 'descricao', 'parcela_numero', 'qtd_parcelas', 'valor_parcela']], use_container_width=True)
                 
-                if not (status_info and status_info['status'] in ['Paga', 'Paga Externo']):
-                    with st.expander("✏️ Editar Item desta Fatura"):
-                        opcoes_item = df_fatura.apply(lambda r: f"Item {r['id']} | {r['descricao']} - R$ {r['valor_parcela']:.2f}", axis=1)
-                        item_sel = st.selectbox("Selecione para corrigir:", ["Selecione..."] + list(opcoes_item))
+                # --- EDIÇÃO DE ITEM (AGORA SEMPRE VISÍVEL) ---
+                with st.expander("✏️ Editar Item desta Fatura"):
+                    if esta_paga:
+                        st.info("💡 Você está editando uma fatura JÁ PAGA. Se alterar valores, o total da fatura mudará, mas o valor que você pagou anteriormente continuará registrado até você reabrir a fatura.")
+                    
+                    opcoes_item = df_fatura.apply(lambda r: f"Item {r['id']} | {r['descricao']} - R$ {r['valor_parcela']:.2f}", axis=1)
+                    item_sel = st.selectbox("Selecione para corrigir:", ["Selecione..."] + list(opcoes_item))
+                    
+                    if item_sel != "Selecione...":
+                        id_item = int(item_sel.split(" |")[0].replace("Item ", ""))
+                        dados_item = df_fatura[df_fatura['id'] == id_item].iloc[0]
                         
-                        if item_sel != "Selecione...":
-                            id_item = int(item_sel.split(" |")[0].replace("Item ", ""))
-                            dados_item = df_fatura[df_fatura['id'] == id_item].iloc[0]
+                        with st.form(f"form_edit_item_{id_item}"):
+                            ni_desc = st.text_input("Descrição", value=dados_item['descricao'])
+                            c_val, c_dat = st.columns(2)
+                            ni_valor = c_val.number_input("Valor da Parcela", value=float(dados_item['valor_parcela']))
+                            ni_data = c_dat.date_input("Data Compra", value=pd.to_datetime(dados_item['data_compra']))
                             
-                            with st.form(f"form_edit_item_{id_item}"):
-                                ni_desc = st.text_input("Descrição", value=dados_item['descricao'])
-                                c_val, c_dat = st.columns(2)
-                                ni_valor = c_val.number_input("Valor da Parcela", value=float(dados_item['valor_parcela']))
-                                ni_data = c_dat.date_input("Data Compra", value=pd.to_datetime(dados_item['data_compra']))
-                                
-                                if st.form_submit_button("Atualizar Item"):
-                                    atualizar_item_fatura(user_id, id_item, ni_desc, ni_valor, ni_data)
-                                    st.success("Item corrigido!")
-                                    st.rerun()
+                            if st.form_submit_button("Atualizar Item"):
+                                atualizar_item_fatura(user_id, id_item, ni_desc, ni_valor, ni_data)
+                                st.success("Item corrigido!")
+                                st.rerun()
 
     # --- ABA 2: NOVA COMPRA (Igual) ---
     with tab_compra:
