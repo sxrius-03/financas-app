@@ -11,6 +11,7 @@ CATEGORIAS = {
         "Financeiro": ["Taxas Bancárias", "Impostos", "Dívidas", "Pagamento de Fatura"],
         "Igreja": ["Dízimo", "Oferta", "Pacto", "Direcionado"],
         "Investimentos (Aportes)": ["Envio para Corretora", "Aplicação Renda Fixa", "Compra de Ações", "Reserva de Emergência"], 
+        "Outros": ["Outros"],
     },
     "Receita": {
         "Trabalho Principal": ["Salário Líquido", "Adiantamento", "13º Salário", "Férias", "Bolsa de Estudos"],
