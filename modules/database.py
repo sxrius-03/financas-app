@@ -392,6 +392,17 @@ def registrar_pagamento_fatura(user_id, cartao_id, mes_referencia, status, valor
     conn.commit()
     conn.close()
 
+def excluir_pagamento_fatura(user_id, cartao_id, mes_referencia):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('''
+        DELETE FROM faturas_controle 
+        WHERE user_id=%s AND cartao_id=%s AND mes_referencia=%s
+    ''', (user_id, cartao_id, mes_referencia))
+    conn.commit()
+    conn.close()
+    return True
+
 def obter_status_fatura(user_id, cartao_id, mes_referencia):
     conn = get_connection()
     c = conn.cursor()
