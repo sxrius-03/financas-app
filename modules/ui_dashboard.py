@@ -2,7 +2,7 @@ import streamlit as st
 import plotly.express as px
 import pandas as pd
 from datetime import datetime
-from modules.database import carregar_dados
+from modules.database import carregar_dados, carregar_reservas
 
 def show_dashboard():
     if 'user_id' not in st.session_state: return
@@ -27,22 +27,37 @@ def show_dashboard():
     tab_total, tab_anual, tab_mensal = st.tabs(["🌎 Visão Total (Acumulado)", "📅 Visão Anual", "📆 Visão Mensal"])
 
     # ===================================================
-    # ABA 1: VISÃO TOTAL
+    # ABA 1: VISÃO TOTAL (AGORA COM RESERVA)
     # ===================================================
     with tab_total:
-        st.markdown("### Resumo Geral (Desde o Início)")
-        
+        # 1. Dados do Caixa (Lançamentos)
         total_rec = df[df['tipo'] == 'Receita']['valor'].sum()
         total_desp = df[df['tipo'] == 'Despesa']['valor'].sum()
-        saldo_geral = total_rec - total_desp
+        saldo_caixa = total_rec - total_desp
         
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Receita Total Histórica", f"R$ {total_rec:,.2f}")
-        c2.metric("Despesa Total Histórica", f"R$ {total_desp:,.2f}", delta_color="inverse")
-        c3.metric("Saldo Atual Acumulado", f"R$ {saldo_geral:,.2f}", delta=f"{saldo_geral:,.2f}")
+        # 2. Dados da Reserva (Módulo Novo)
+        df_reserva = carregar_reservas(user_id)
+        saldo_reserva = df_reserva['saldo_atual'].sum() if not df_reserva.empty else 0.0
+        
+        # 3. Total Geral
+        total_liquidez = saldo_caixa + saldo_reserva
+
+        # --- SEÇÃO 1: RESUMO PATRIMONIAL ---
+        st.markdown("### 💰 Posição Geral (Caixa + Reservas)")
+        c_tot1, c_tot2, c_tot3 = st.columns(3)
+        c_tot1.metric("Saldo em Caixa (Giro)", f"R$ {saldo_caixa:,.2f}", help="Dinheiro disponível em conta corrente/carteira (Receitas - Despesas)")
+        c_tot2.metric("Total em Reservas", f"R$ {saldo_reserva:,.2f}", delta="Segurança", help="Dinheiro guardado no módulo Reservas")
+        c_tot3.metric("Disponibilidade Total", f"R$ {total_liquidez:,.2f}", help="Soma do Caixa + Reservas")
         
         st.divider()
+
+        # --- SEÇÃO 2: FLUXO DE CAIXA HISTÓRICO ---
+        st.markdown("### 📉 Histórico de Fluxo (Apenas Caixa)")
+        k1, k2 = st.columns(2)
+        k1.metric("Receita Total Acumulada", f"R$ {total_rec:,.2f}")
+        k2.metric("Despesa Total Acumulada", f"R$ {total_desp:,.2f}", delta_color="inverse")
         
+        # Gráfico de Evolução
         df_tempo = df.groupby(['Ano', 'Mes', 'tipo'])['valor'].sum().reset_index()
         df_tempo['Data_Ref'] = pd.to_datetime(df_tempo['Ano'].astype(str) + '-' + df_tempo['Mes'].astype(str) + '-01')
         df_tempo = df_tempo.sort_values('Data_Ref')
@@ -55,7 +70,7 @@ def show_dashboard():
         st.plotly_chart(fig_evolucao, use_container_width=True)
 
     # ===================================================
-    # ABA 2: VISÃO ANUAL
+    # ABA 2: VISÃO ANUAL (Mantida igual)
     # ===================================================
     with tab_anual:
         anos = sorted(df['Ano'].unique().tolist(), reverse=True)
@@ -107,7 +122,7 @@ def show_dashboard():
                     st.info("Sem despesas para gráfico.")
 
     # ===================================================
-    # ABA 3: VISÃO MENSAL (COM GRÁFICOS NOVOS)
+    # ABA 3: VISÃO MENSAL (Mantida igual)
     # ===================================================
     with tab_mensal:
         c_filt1, c_filt2 = st.columns(2)
@@ -136,10 +151,8 @@ def show_dashboard():
             
             st.divider()
             
-            # --- NOVOS GRÁFICOS PARA VISÃO MENSAL ---
             gm1, gm2 = st.columns(2)
             
-            # Gráfico de Barras: Evolução Diária
             with gm1:
                 df_dias = df_mes.groupby(['Dia', 'tipo'])['valor'].sum().reset_index()
                 fig_bar_dia = px.bar(
@@ -147,11 +160,9 @@ def show_dashboard():
                     title=f"Evolução Diária ({sel_mes_nome})",
                     color_discrete_map=color_map, template="plotly_dark"
                 )
-                # Garante que mostre todos os dias que tem movimento
                 fig_bar_dia.update_xaxes(dtick=1) 
                 st.plotly_chart(fig_bar_dia, use_container_width=True)
 
-            # Gráfico de Rosca: Categorias do Mês
             with gm2:
                 df_cat_mes = df_mes[df_mes['tipo']=='Despesa'].groupby('categoria')['valor'].sum().reset_index()
                 if not df_cat_mes.empty:
@@ -166,7 +177,6 @@ def show_dashboard():
             
             st.divider()
             
-            # Tabela de Extrato
             st.dataframe(
                 df_mes[['data', 'descricao', 'categoria', 'valor', 'tipo', 'conta']].sort_values('data'),
                 use_container_width=True, hide_index=True,
