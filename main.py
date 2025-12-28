@@ -8,10 +8,11 @@ import modules.ui_investimentos as ui_investimentos
 import modules.ui_orcamento as ui_orcamento
 import time
 import modules.ui_cartoes as ui_cartoes
-import modules.ui_recorrencias as ui_recorrencias
+import modules.ui_despesas_fixas as ui_despesas_fixas
 import modules.ui_ferramentas as ui_ferramentas
 import modules.notifications as notifications
-import modules.ui_reserva as ui_reserva # <--- IMPORT CORRETO (VOCÊ JÁ TINHA)
+import modules.ui_reserva as ui_reserva
+import modules.ui_despesas_fixas as ui_despesas_fixas
 
 # 1. Configuração da Página
 st.set_page_config(page_title="Sistema Financeiro", page_icon="💰", layout="wide")
@@ -123,9 +124,9 @@ else:
         selected = option_menu(
             menu_title="Menu Principal",
             # --- CORREÇÃO AQUI: ADICIONEI "Reserva" ---
-            options=["Dashboard", "Lançamentos", "Cartões", "Investimentos", "Reserva", "Orçamento", "Recorrências", "Ferramentas"],
+            options=["Dashboard", "Lançamentos", "Despesas Fixas", "Cartões", "Investimentos", "Reserva", "Orçamento", "Recorrências", "Ferramentas"],
             # --- CORREÇÃO AQUI: ADICIONEI ÍCONE "safe" ou "shield-lock" ---
-            icons=["graph-up-arrow", "pencil-square", "credit-card", "bank", "safe", "calculator", "arrow-repeat", "tools"],
+            icons=["graph-up-arrow", "pencil-square", "calendar-check","credit-card", "bank", "safe", "calculator", "arrow-repeat", "tools"],
             menu_icon="cast",
             default_index=0,
             styles={
@@ -148,8 +149,10 @@ else:
     elif selected == "Cartões":
         ui_cartoes.show_cartoes()
     elif selected == "Recorrências":
-        ui_recorrencias.show_recorrencias()
+        ui_despesas_fixas.show_recorrencias()
     elif selected == "Ferramentas":
         ui_ferramentas.show_ferramentas()
     elif selected == "Reserva":
         ui_reserva.show_reserva()
+    elif selected == "Despesas Fixas": # Era "Recorrências"
+        ui_despesas_fixas.show_despesas_fixas()
