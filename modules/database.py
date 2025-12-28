@@ -137,21 +137,7 @@ def init_db():
         )
     ''')
 
-    # 8. Recorrências
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS recorrencias (
-            id SERIAL PRIMARY KEY,
-            user_id INTEGER REFERENCES users(id),
-            nome TEXT,
-            valor NUMERIC,
-            categoria TEXT,
-            dia_vencimento INTEGER,
-            tipo TEXT,
-            ativa BOOLEAN DEFAULT TRUE
-        )
-    ''')
-
-    # 9. Controle de Faturas
+    # 8. Controle de Faturas
     c.execute('''
         CREATE TABLE IF NOT EXISTS faturas_controle (
             user_id INTEGER REFERENCES users(id),
@@ -164,7 +150,7 @@ def init_db():
         )
     ''')
     
-    # 10. Reservas (COM ÍNDICE E TAXA)
+    # 9. Reservas (COM ÍNDICE E TAXA)
     c.execute('''
         CREATE TABLE IF NOT EXISTS reservas (
             id SERIAL PRIMARY KEY,
@@ -179,7 +165,7 @@ def init_db():
         )
     ''')
 
-    # 11. Transações da Reserva
+    # 10. Transações da Reserva
     c.execute('''
         CREATE TABLE IF NOT EXISTS reserva_transacoes (
             id SERIAL PRIMARY KEY,

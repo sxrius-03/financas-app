@@ -124,7 +124,7 @@ else:
         selected = option_menu(
             menu_title="Menu Principal",
             # --- CORREÇÃO AQUI: ADICIONEI "Reserva" ---
-            options=["Dashboard", "Lançamentos", "Despesas Fixas", "Cartões", "Investimentos", "Reserva", "Orçamento", "Recorrências", "Ferramentas"],
+            options=["Dashboard", "Lançamentos", "Despesas Fixas", "Cartões", "Investimentos", "Reserva", "Orçamento", "Ferramentas"],
             # --- CORREÇÃO AQUI: ADICIONEI ÍCONE "safe" ou "shield-lock" ---
             icons=["graph-up-arrow", "pencil-square", "calendar-check","credit-card", "bank", "safe", "calculator", "arrow-repeat", "tools"],
             menu_icon="cast",
@@ -148,8 +148,6 @@ else:
         ui_orcamento.show_orcamento()
     elif selected == "Cartões":
         ui_cartoes.show_cartoes()
-    elif selected == "Recorrências":
-        ui_despesas_fixas.show_recorrencias()
     elif selected == "Ferramentas":
         ui_ferramentas.show_ferramentas()
     elif selected == "Reserva":
