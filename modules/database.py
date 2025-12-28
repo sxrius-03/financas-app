@@ -282,7 +282,7 @@ def atualizar_lancamento(user_id, id_lancamento, dados: dict):
     conn.close()
     clear_cache()
 
-@st.cache_data(ttl=600) # Cache de 10 min
+@st.cache_data(ttl=600, show_spinner=False) # Cache de 10 min
 def carregar_dados(user_id):
     conn = get_connection()
     df = pd.read_sql_query("SELECT * FROM lancamentos WHERE user_id = %s", conn, params=(user_id,))
@@ -325,7 +325,7 @@ def atualizar_investimento(user_id, id_inv, dados: dict):
     conn.close()
     clear_cache()
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=600, show_spinner=False)
 def carregar_investimentos(user_id):
     conn = get_connection()
     df = pd.read_sql_query("SELECT * FROM investimentos WHERE user_id = %s", conn, params=(user_id,))
@@ -359,7 +359,7 @@ def salvar_meta(user_id, categoria, valor, mes, ano):
     conn.close()
     clear_cache()
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=600, show_spinner=False)
 def carregar_metas(user_id, mes=None, ano=None):
     conn = get_connection()
     sql = "SELECT * FROM metas WHERE user_id = %s"
@@ -382,7 +382,7 @@ def excluir_meta(user_id, categoria, mes, ano):
     clear_cache()
     return True
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=600, show_spinner=False)
 def listar_meses_com_metas(user_id):
     """Retorna lista de (mes, ano) que possuem metas cadastradas"""
     conn = get_connection()
@@ -405,7 +405,7 @@ def salvar_cartao(user_id, nome, fechamento, vencimento):
     conn.close()
     clear_cache()
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=600, show_spinner=False)
 def carregar_cartoes(user_id):
     conn = get_connection()
     df = pd.read_sql_query("SELECT * FROM cartoes_credito WHERE user_id = %s", conn, params=(user_id,))
@@ -448,7 +448,7 @@ def salvar_compra_credito(user_id, cartao_id, data_compra, descricao, categoria,
     conn.close()
     clear_cache()
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=600, show_spinner=False)
 def carregar_fatura(user_id, cartao_id, mes_fatura_str):
     conn = get_connection()
     sql = """
@@ -535,7 +535,7 @@ def atualizar_recorrencia(user_id, id_rec, nome, valor, categoria, dia_venciment
     conn.close()
     clear_cache()
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=600, show_spinner=False)
 def carregar_recorrencias(user_id):
     conn = get_connection()
     df = pd.read_sql_query("SELECT * FROM recorrencias WHERE user_id = %s", conn, params=(user_id,))
@@ -587,7 +587,7 @@ def salvar_reserva_conta(user_id, nome, tipo, indice, taxa, meta):
         conn.close()
         clear_cache()
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=600, show_spinner=False)
 def carregar_reservas(user_id):
     conn = get_connection()
     # Tenta buscar com as novas colunas
@@ -628,7 +628,7 @@ def salvar_transacao_reserva(user_id, res_id, data, tipo, valor, desc):
     conn.close()
     clear_cache()
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=600, show_spinner=False)
 def carregar_extrato_reserva(user_id):
     conn = get_connection()
     sql = """
@@ -729,7 +729,7 @@ def buscar_pendencias_proximas(user_id):
 
 # --- PROJEÇÃO / SALDO FUTURO (LEITURAS OTIMIZADAS) ---
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=300, show_spinner=False)
 def calcular_saldo_atual(user_id):
     """Retorna o saldo líquido atual (apenas contas correntes/carteira)"""
     conn = get_connection()
@@ -740,7 +740,7 @@ def calcular_saldo_atual(user_id):
     despesas = df[df['tipo'] == 'Despesa']['valor'].sum()
     return receitas - despesas
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=300, show_spinner=False)
 def buscar_faturas_futuras(user_id):
     """Agrupa as parcelas futuras de cartão por data de vencimento"""
     conn = get_connection()
@@ -759,7 +759,7 @@ def buscar_faturas_futuras(user_id):
     conn.close()
     return df
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=300, show_spinner=False)
 def buscar_metas_saldo_restante(user_id, mes, ano):
     """
     Calcula quanto falta gastar de cada meta no mês atual.

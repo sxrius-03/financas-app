@@ -13,6 +13,8 @@ import modules.ui_ferramentas as ui_ferramentas
 import modules.notifications as notifications
 import modules.ui_reserva as ui_reserva
 import modules.ui_despesas_fixas as ui_despesas_fixas
+import modules.ui_projecao as ui_projecao
+import modules.ui_receitas_fixas as ui_receitas_fixas
 
 # 1. Configuração da Página
 st.set_page_config(page_title="Sistema Financeiro", page_icon="💰", layout="wide")
@@ -124,9 +126,9 @@ else:
         selected = option_menu(
             menu_title="Menu Principal",
             # --- CORREÇÃO AQUI: ADICIONEI "Reserva" ---
-            options=["Dashboard", "Lançamentos", "Despesas Fixas", "Cartões", "Investimentos", "Reserva", "Orçamento", "Ferramentas"],
+            options=["Dashboard", "Lançamentos", "Receitas Fixas","Despesas Fixas", "Projeção", "Cartões", "Investimentos", "Reserva", "Orçamento", "Ferramentas"],
             # --- CORREÇÃO AQUI: ADICIONEI ÍCONE "safe" ou "shield-lock" ---
-            icons=["graph-up-arrow", "pencil-square", "calendar-check","credit-card", "bank", "safe", "calculator", "arrow-repeat", "tools"],
+            icons=["graph-up-arrow", "pencil-square", "cash-stack", "calendar-x", "activity", "credit-card", "bank", "safe", "calculator", "arrow-repeat", "tools"],
             menu_icon="cast",
             default_index=0,
             styles={
@@ -152,5 +154,9 @@ else:
         ui_ferramentas.show_ferramentas()
     elif selected == "Reserva":
         ui_reserva.show_reserva()
-    elif selected == "Despesas Fixas": # Era "Recorrências"
+    elif selected == "Despesas Fixas":
         ui_despesas_fixas.show_despesas_fixas()
+    elif selected == "Projeção":
+        ui_projecao.show_projecao()
+    elif selected == "Receitas Fixas":
+        ui_receitas_fixas.show_receitas_fixas()
