@@ -118,31 +118,28 @@ def init_db():
         )
     ''')
 
-    # 9. Controle de Faturas (NOVA)
-    # Rastreia se uma fatura específica (Mês/Ano + Cartão) foi paga
+    # 9. Controle de Faturas
     c.execute('''
         CREATE TABLE IF NOT EXISTS faturas_controle (
             user_id INTEGER REFERENCES users(id),
             cartao_id INTEGER REFERENCES cartoes_credito(id),
-            mes_referencia DATE, -- Data base da fatura (Ex: 01/05/2025)
-            status TEXT, -- 'Paga', 'Paga Externo'
+            mes_referencia DATE,
+            status TEXT,
             data_pagamento DATE,
             valor_pago NUMERIC,
             PRIMARY KEY (user_id, cartao_id, mes_referencia)
         )
     ''')
     
-    conn.commit()
-    conn.close()
-
+    # --- CORREÇÃO: As tabelas novas DEVEM estar ANTES do conn.close() ---
     
     # 10. Reservas (Os "Potes" ou Contas)
     c.execute('''
         CREATE TABLE IF NOT EXISTS reservas (
             id SERIAL PRIMARY KEY,
             user_id INTEGER REFERENCES users(id),
-            nome TEXT, -- Ex: Nubank Caixinha, Tesouro Selic
-            tipo_aplicacao TEXT, -- Ex: CDB 100% CDI, LCI, Poupança
+            nome TEXT,
+            tipo_aplicacao TEXT,
             saldo_atual NUMERIC DEFAULT 0.0,
             meta_valor NUMERIC DEFAULT 0.0
         )
@@ -155,7 +152,7 @@ def init_db():
             user_id INTEGER REFERENCES users(id),
             reserva_id INTEGER REFERENCES reservas(id),
             data DATE,
-            tipo TEXT, -- 'Aporte', 'Resgate', 'Rendimento'
+            tipo TEXT,
             valor NUMERIC,
             descricao TEXT
         )
@@ -351,7 +348,6 @@ def excluir_cartao(user_id, cartao_id):
     c = conn.cursor()
     c.execute("DELETE FROM lancamentos_cartao WHERE cartao_id=%s AND user_id=%s", (cartao_id, user_id))
     c.execute("DELETE FROM cartoes_credito WHERE id=%s AND user_id=%s", (cartao_id, user_id))
-    # Também apaga o status da fatura
     c.execute("DELETE FROM faturas_controle WHERE cartao_id=%s AND user_id=%s", (cartao_id, user_id))
     conn.commit()
     conn.close()
@@ -403,13 +399,9 @@ def atualizar_item_fatura(user_id, id_item, nova_descricao, novo_valor, nova_dat
     conn.close()
     return True
 
-# --- FUNÇÕES: CONTROLE DE PAGAMENTO DE FATURAS (NOVO) ---
+# --- FUNÇÕES: CONTROLE DE PAGAMENTO DE FATURAS ---
 
 def registrar_pagamento_fatura(user_id, cartao_id, mes_referencia, status, valor, data_pagamento):
-    """
-    Registra que uma fatura foi paga (ou marcada como paga).
-    OBS: Se for 'Paga', deve-se chamar também salvar_lancamento na UI para abater do saldo.
-    """
     conn = get_connection()
     c = conn.cursor()
     c.execute('''
@@ -575,8 +567,7 @@ def migrar_dados_antigos_para_reserva(user_id):
     count = 0
     if not df_antigos.empty:
         for _, row in df_antigos.iterrows():
-            # Define se é aporte ou resgate (se Receita, é resgate?? Não, geralmente reserva lançamos despesa como aporte)
-            # Assumindo: Despesa com categoria 'Investimento' = Aporte na Reserva
+            # Define se é aporte ou resgate
             tipo_res = 'Aporte' if row['tipo'] == 'Despesa' else 'Resgate'
             
             # Insere no novo módulo
