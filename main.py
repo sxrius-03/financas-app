@@ -6,11 +6,12 @@ import modules.ui_lancamentos as ui_lancamentos
 import modules.ui_dashboard as ui_dashboard
 import modules.ui_investimentos as ui_investimentos
 import modules.ui_orcamento as ui_orcamento
+import time
 import modules.ui_cartoes as ui_cartoes
 import modules.ui_recorrencias as ui_recorrencias
 import modules.ui_ferramentas as ui_ferramentas
-import modules.notifications as notifications  # <--- MÓDULO NOVO DE NOTIFICAÇÕES
-import time
+import modules.notifications as notifications
+import modules.ui_reserva as ui_reserva # <--- IMPORT CORRETO (VOCÊ JÁ TINHA)
 
 # 1. Configuração da Página
 st.set_page_config(page_title="Sistema Financeiro", page_icon="💰", layout="wide")
@@ -116,13 +117,15 @@ else:
             
         st.divider()
         
-        # --- EXIBIR NOTIFICAÇÕES NA BARRA LATERAL ---
+        # --- EXIBIR NOTIFICAÇÕES (VOCÊ FEZ CORRETO) ---
         notifications.exibir_notificacoes_na_sidebar(st.session_state['user_id'])
         
         selected = option_menu(
             menu_title="Menu Principal",
-            options=["Dashboard", "Lançamentos", "Cartões", "Investimentos", "Orçamento", "Recorrências", "Ferramentas"],
-            icons=["graph-up-arrow", "pencil-square", "credit-card", "bank", "calculator", "arrow-repeat", "tools"],
+            # --- CORREÇÃO AQUI: ADICIONEI "Reserva" ---
+            options=["Dashboard", "Lançamentos", "Cartões", "Investimentos", "Reserva", "Orçamento", "Recorrências", "Ferramentas"],
+            # --- CORREÇÃO AQUI: ADICIONEI ÍCONE "safe" ou "shield-lock" ---
+            icons=["graph-up-arrow", "pencil-square", "credit-card", "bank", "safe", "calculator", "arrow-repeat", "tools"],
             menu_icon="cast",
             default_index=0,
             styles={
@@ -148,3 +151,5 @@ else:
         ui_recorrencias.show_recorrencias()
     elif selected == "Ferramentas":
         ui_ferramentas.show_ferramentas()
+    elif selected == "Reserva":
+        ui_reserva.show_reserva()
