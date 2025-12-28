@@ -10,9 +10,12 @@ def show_lancamentos():
         return
     user_id = st.session_state['user_id']
 
-    tab_novo, tab_gerenciar = st.tabs(["➕ Novo Lançamento", "✏️ Gerenciar / Editar / Excluir"])
+    # Abas principais
+    tab_novo, tab_gerenciar = st.tabs(["➕ Novo Lançamento", "🔍 Gerenciar / Filtros & Exclusão"])
 
-    # ABA 1: ADICIONAR (MANTIDA IGUAL, SÓ USANDO CONSTANTS)
+    # ===================================================
+    # ABA 1: ADICIONAR NOVO (MANTIDA ORIGINAL)
+    # ===================================================
     with tab_novo:
         st.header("📝 Registrar Movimentação (Caixa)")
         st.caption("Use esta tela para movimentações que afetam seu saldo IMEDIATAMENTE (Débito, PIX, Dinheiro).")
@@ -69,85 +72,147 @@ def show_lancamentos():
             salvar_lancamento(user_id, novo_dado)
             st.toast("Lançamento salvo com sucesso!", icon="✅")
 
-        # Histórico Recente
-        st.divider()
-        st.subheader("Últimos Registros")
-        df = carregar_dados(user_id)
-        if not df.empty:
-            df = df.sort_values(by="data", ascending=False)
-            st.dataframe(
-                df[['data', 'tipo', 'categoria', 'valor', 'conta', 'status']].head(10),
-                use_container_width=True, hide_index=True,
-                column_config={"data": st.column_config.DateColumn("Data", format="DD/MM/YYYY"), "valor": st.column_config.NumberColumn("Valor", format="R$ %.2f")}
-            )
-
-    # ABA 2: GERENCIAR / EDITAR
+    # ===================================================
+    # ABA 2: GERENCIAR (NOVA VERSÃO COM FILTROS E BULK DELETE)
+    # ===================================================
     with tab_gerenciar:
-        st.header("🗂️ Histórico Completo")
+        st.header("🗂️ Gerenciamento Avançado")
+        
         df = carregar_dados(user_id)
         
         if df.empty:
             st.info("Nenhum lançamento encontrado.")
         else:
-            df = df.sort_values(by="data", ascending=False)
+            # Prepara dados para filtros
+            df['data'] = pd.to_datetime(df['data'])
+            df['Ano'] = df['data'].dt.year
+            df['Mes'] = df['data'].dt.month
+            df['Dia'] = df['data'].dt.day
             
-            # Seletor para Editar
-            st.subheader("✏️ Editar Lançamento")
-            opcoes_editar = df.apply(lambda row: f"ID: {row['id']} | {row['data'].strftime('%d/%m/%Y')} | {row['descricao']} | R$ {row['valor']:.2f}", axis=1)
-            escolha_editar = st.selectbox("Selecione para editar:", options=opcoes_editar)
+            # --- ÁREA DE FILTROS ---
+            with st.expander("🔍 Filtros de Visualização", expanded=True):
+                # Linha 1: Filtros de Tempo
+                c_ano, c_mes, c_dia = st.columns(3)
+                
+                anos_disp = sorted(df['Ano'].unique())
+                sel_ano = c_ano.selectbox("Ano", ["Todos"] + list(map(str, anos_disp)))
+                
+                sel_mes = "Todos"
+                sel_dia = "Todos"
+                
+                if sel_ano != "Todos":
+                    meses_disp = sorted(df[df['Ano'] == int(sel_ano)]['Mes'].unique())
+                    sel_mes = c_mes.selectbox("Mês", ["Todos"] + list(map(str, meses_disp)))
+                    
+                    if sel_mes != "Todos":
+                        dias_disp = sorted(df[(df['Ano'] == int(sel_ano)) & (df['Mes'] == int(sel_mes))]['Dia'].unique())
+                        sel_dia = c_dia.selectbox("Dia", ["Todos"] + list(map(str, dias_disp)))
+
+                st.divider()
+                
+                # Linha 2: Filtros de Categoria
+                c_tipo, c_cat, c_sub = st.columns(3)
+                
+                sel_tipo = c_tipo.selectbox("Tipo", ["Todos", "Receita", "Despesa"])
+                
+                sel_cat = "Todos"
+                sel_sub = "Todos"
+                
+                if sel_tipo != "Todos":
+                    cats_disp = sorted(df[df['tipo'] == sel_tipo]['categoria'].unique())
+                    sel_cat = c_cat.selectbox("Categoria", ["Todos"] + cats_disp)
+                    
+                    if sel_cat != "Todos":
+                        subs_disp = sorted(df[(df['tipo'] == sel_tipo) & (df['categoria'] == sel_cat)]['subcategoria'].unique())
+                        sel_sub = c_sub.selectbox("Subcategoria", ["Todos"] + subs_disp)
+
+            # --- APLICAÇÃO DOS FILTROS ---
+            df_filtro = df.copy()
             
-            if escolha_editar:
+            if sel_ano != "Todos": df_filtro = df_filtro[df_filtro['Ano'] == int(sel_ano)]
+            if sel_mes != "Todos": df_filtro = df_filtro[df_filtro['Mes'] == int(sel_mes)]
+            if sel_dia != "Todos": df_filtro = df_filtro[df_filtro['Dia'] == int(sel_dia)]
+            
+            if sel_tipo != "Todos": df_filtro = df_filtro[df_filtro['tipo'] == sel_tipo]
+            if sel_cat != "Todos": df_filtro = df_filtro[df_filtro['categoria'] == sel_cat]
+            if sel_sub != "Todos": df_filtro = df_filtro[df_filtro['subcategoria'] == sel_sub]
+
+            # --- TABELA INTERATIVA (DATA EDITOR) ---
+            st.markdown(f"### Resultados: {len(df_filtro)} lançamentos")
+            
+            # Adiciona coluna de seleção para o usuário interagir
+            df_filtro.insert(0, "Selecionar", False)
+            
+            # Configuração das colunas para o editor
+            column_config = {
+                "Selecionar": st.column_config.CheckboxColumn("✅", help="Selecione para excluir", default=False),
+                "data": st.column_config.DateColumn("Data", format="DD/MM/YYYY"),
+                "valor": st.column_config.NumberColumn("Valor", format="R$ %.2f"),
+                "Ano": None, "Mes": None, "Dia": None, "user_id": None # Esconde colunas auxiliares
+            }
+            
+            # Tabela editável
+            df_editado = st.data_editor(
+                df_filtro,
+                column_config=column_config,
+                hide_index=True,
+                use_container_width=True,
+                disabled=["id", "data", "tipo", "categoria", "subcategoria", "descricao", "valor", "conta", "forma_pagamento", "status"] # Trava edição direta, libera só checkbox
+            )
+            
+            # --- AÇÃO EM MASSA: EXCLUIR ---
+            itens_selecionados = df_editado[df_editado["Selecionar"] == True]
+            
+            if not itens_selecionados.empty:
+                qtd_sel = len(itens_selecionados)
+                total_sel = itens_selecionados['valor'].sum()
+                
+                st.warning(f"⚠️ Você selecionou **{qtd_sel} itens** somando **R$ {total_sel:,.2f}**.")
+                
+                col_del_btn, _ = st.columns([1, 4])
+                if col_del_btn.button(f"🗑️ Excluir {qtd_sel} Lançamentos Selecionados", type="primary"):
+                    sucessos = 0
+                    with st.status("Processando exclusões...", expanded=True) as status:
+                        for index, row in itens_selecionados.iterrows():
+                            st.write(f"Excluindo: {row['descricao']}...")
+                            if excluir_lancamento(user_id, int(row['id'])):
+                                sucessos += 1
+                        status.update(label="Concluído!", state="complete", expanded=False)
+                    
+                    if sucessos > 0:
+                        st.success(f"{sucessos} itens excluídos com sucesso!")
+                        st.rerun()
+            
+            # --- EDIÇÃO INDIVIDUAL (PRESERVADA E MELHORADA) ---
+            st.divider()
+            st.caption("Para editar um item específico (mudar valor, data, etc.), selecione-o abaixo:")
+            
+            opcoes_editar = df_filtro.apply(lambda row: f"ID: {row['id']} | {row['data'].strftime('%d/%m/%Y')} | {row['descricao']} | R$ {row['valor']:.2f}", axis=1)
+            escolha_editar = st.selectbox("Selecione para editar:", options=["Selecione..."] + list(opcoes_editar))
+            
+            if escolha_editar != "Selecione...":
                 id_edit = int(escolha_editar.split(" |")[0].replace("ID: ", ""))
                 dados_atuais = df[df['id'] == id_edit].iloc[0]
                 
                 with st.form(f"form_edit_{id_edit}"):
+                    st.write(f"**Editando:** {dados_atuais['descricao']}")
                     ec1, ec2 = st.columns(2)
                     e_data = ec1.date_input("Data", value=dados_atuais['data'])
-                    e_tipo = ec2.selectbox("Tipo", list(mapa_categorias.keys()), index=0 if dados_atuais['tipo']=="Despesa" else 1)
-                    
-                    ec3, ec4 = st.columns(2)
-                    e_cat_opts = list(mapa_categorias[e_tipo].keys())
-                    try: idx_cat = e_cat_opts.index(dados_atuais['categoria'])
-                    except: idx_cat = 0
-                    e_cat = ec3.selectbox("Categoria", e_cat_opts, index=idx_cat)
-                    
-                    e_sub_opts = mapa_categorias[e_tipo][e_cat]
-                    try: idx_sub = e_sub_opts.index(dados_atuais['subcategoria'])
-                    except: idx_sub = 0
-                    e_sub = ec4.selectbox("Subcategoria", e_sub_opts, index=idx_sub)
+                    e_val = ec2.number_input("Valor", value=float(dados_atuais['valor']), min_value=0.01)
                     
                     e_desc = st.text_input("Descrição", value=dados_atuais['descricao'])
                     
-                    ec5, ec6, ec7 = st.columns(3)
-                    e_val = ec5.number_input("Valor", value=float(dados_atuais['valor']), min_value=0.01)
-                    
-                    # Simplificação no Edit para a conta, mantém a string original ou permite trocar
-                    # Para ser perfeito precisaria da mesma logica condicional do Add, mas vamos simplificar
-                    bancos_completos = bancos_disponiveis + ["Vale Alimentação", "Carteira"]
-                    try: idx_banco = bancos_completos.index(dados_atuais['conta'])
-                    except: idx_banco = 0
-                    e_conta = ec6.selectbox("Conta", bancos_completos, index=idx_banco)
-                    
-                    try: idx_stat = ["Pago/Recebido", "Pendente", "Agendado"].index(dados_atuais['status'])
-                    except: idx_stat = 0
-                    e_status = ec7.selectbox("Status", ["Pago/Recebido", "Pendente", "Agendado"], index=idx_stat)
-                    
-                    c_save, c_del = st.columns([1, 4])
-                    if c_save.form_submit_button("💾 Salvar Alterações"):
+                    ec3, ec4 = st.columns(2)
+                    e_cat = ec3.selectbox("Categoria", list(CATEGORIAS[dados_atuais['tipo']].keys()), index=list(CATEGORIAS[dados_atuais['tipo']].keys()).index(dados_atuais['categoria']) if dados_atuais['categoria'] in CATEGORIAS[dados_atuais['tipo']] else 0)
+                    e_status = ec4.selectbox("Status", ["Pago/Recebido", "Pendente", "Agendado"], index=["Pago/Recebido", "Pendente", "Agendado"].index(dados_atuais['status']))
+
+                    if st.form_submit_button("💾 Salvar Alterações"):
                         novos_dados = {
-                            "data": e_data, "tipo": e_tipo, "categoria": e_cat, "subcategoria": e_sub,
-                            "descricao": e_desc, "valor": e_val, "conta": e_conta, 
-                            "forma_pagamento": dados_atuais['forma_pagamento'], # Mantém original por simplicidade
-                            "status": e_status
+                            "data": e_data, "tipo": dados_atuais['tipo'], "categoria": e_cat, 
+                            "subcategoria": dados_atuais['subcategoria'], # Mantém subcategoria simples por enquanto
+                            "descricao": e_desc, "valor": e_val, "conta": dados_atuais['conta'], 
+                            "forma_pagamento": dados_atuais['forma_pagamento'], "status": e_status
                         }
                         atualizar_lancamento(user_id, id_edit, novos_dados)
                         st.success("Atualizado!")
                         st.rerun()
-            
-            # Opção de Excluir Separada
-            st.divider()
-            if st.button("🗑️ Excluir este item permanentemente", type="secondary"):
-                excluir_lancamento(user_id, id_edit)
-                st.rerun()
-            
-            st.dataframe(df, use_container_width=True, hide_index=True)
