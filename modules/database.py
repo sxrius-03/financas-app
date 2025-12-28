@@ -67,13 +67,46 @@ def init_db():
         )
     ''')
 
-    # 5. Metas
+    # 5. Metas (MIGRAÇÃO INTELIGENTE PARA SUPORTAR MÊS/ANO)
+    try:
+        # Verifica se a tabela existe e se tem a coluna 'mes'
+        c.execute("SELECT column_name FROM information_schema.columns WHERE table_name='metas' AND column_name='mes'")
+        if c.fetchone() is None:
+            # Se a tabela existe mas não tem 'mes', precisamos migrar a estrutura
+            # Verifica se a tabela existe de fato antes de tentar alterar
+            c.execute("SELECT to_regclass('public.metas')")
+            if c.fetchone()[0] is not None:
+                # 1. Renomeia a antiga
+                c.execute("ALTER TABLE metas RENAME TO metas_old")
+                # 2. Cria a nova com mes/ano
+                c.execute('''
+                    CREATE TABLE metas (
+                        user_id INTEGER REFERENCES users(id),
+                        categoria TEXT,
+                        valor_meta NUMERIC,
+                        mes INTEGER,
+                        ano INTEGER,
+                        PRIMARY KEY (user_id, categoria, mes, ano)
+                    )
+                ''')
+                # 3. Migra dados antigos (assume mês/ano atual para não perder)
+                hj_m = datetime.now().month
+                hj_a = datetime.now().year
+                c.execute(f"INSERT INTO metas (user_id, categoria, valor_meta, mes, ano) SELECT user_id, categoria, valor_meta, {hj_m}, {hj_a} FROM metas_old")
+                # 4. Remove a antiga
+                c.execute("DROP TABLE metas_old")
+    except Exception as e:
+        pass # Erros de permissão ou tabela inexistente serão tratados pela criação padrão abaixo
+
+    # Criação Padrão (se não existir)
     c.execute('''
         CREATE TABLE IF NOT EXISTS metas (
             user_id INTEGER REFERENCES users(id),
             categoria TEXT,
             valor_meta NUMERIC,
-            PRIMARY KEY (user_id, categoria)
+            mes INTEGER,
+            ano INTEGER,
+            PRIMARY KEY (user_id, categoria, mes, ano)
         )
     ''')
 
@@ -131,16 +164,16 @@ def init_db():
         )
     ''')
     
-    # 10. Reservas (ATUALIZADO COM ÍNDICE E TAXA)
+    # 10. Reservas (COM ÍNDICE E TAXA)
     c.execute('''
         CREATE TABLE IF NOT EXISTS reservas (
             id SERIAL PRIMARY KEY,
             user_id INTEGER REFERENCES users(id),
             nome TEXT,
             tipo_aplicacao TEXT,
-            indice TEXT, -- Ex: CDI, Selic
-            taxa NUMERIC, -- Ex: 110 (para 110%), 6.5 (para IPCA+6.5)
-            rentabilidade TEXT, -- Mantido para compatibilidade ou exibição (Ex: "110% CDI")
+            indice TEXT, 
+            taxa NUMERIC, 
+            rentabilidade TEXT, 
             saldo_atual NUMERIC DEFAULT 0.0,
             meta_valor NUMERIC DEFAULT 0.0
         )
@@ -153,7 +186,7 @@ def init_db():
             user_id INTEGER REFERENCES users(id),
             reserva_id INTEGER REFERENCES reservas(id),
             data DATE,
-            tipo TEXT, -- 'Aporte', 'Resgate', 'Rendimento'
+            tipo TEXT,
             valor NUMERIC,
             descricao TEXT
         )
@@ -300,31 +333,50 @@ def excluir_investimento(user_id, id_investimento):
     conn.close()
     return rows > 0
 
-# --- FUNÇÕES DE METAS ---
+# --- FUNÇÕES DE METAS (ATUALIZADAS PARA MENSAL) ---
 
-def salvar_meta(user_id, categoria, valor):
+def salvar_meta(user_id, categoria, valor, mes, ano):
     conn = get_connection()
     c = conn.cursor()
+    # Upsert com base em User + Categoria + Mês + Ano
     c.execute('''
-        INSERT INTO metas (user_id, categoria, valor_meta) VALUES (%s, %s, %s)
-        ON CONFLICT (user_id, categoria) DO UPDATE SET valor_meta = EXCLUDED.valor_meta
-    ''', (user_id, categoria, valor))
+        INSERT INTO metas (user_id, categoria, valor_meta, mes, ano) 
+        VALUES (%s, %s, %s, %s, %s)
+        ON CONFLICT (user_id, categoria, mes, ano) 
+        DO UPDATE SET valor_meta = EXCLUDED.valor_meta
+    ''', (user_id, categoria, valor, mes, ano))
     conn.commit()
     conn.close()
 
-def carregar_metas(user_id):
+def carregar_metas(user_id, mes=None, ano=None):
     conn = get_connection()
-    df = pd.read_sql_query("SELECT * FROM metas WHERE user_id = %s", conn, params=(user_id,))
+    sql = "SELECT * FROM metas WHERE user_id = %s"
+    params = [user_id]
+    
+    if mes and ano:
+        sql += " AND mes = %s AND ano = %s"
+        params.extend([mes, ano])
+        
+    df = pd.read_sql_query(sql, conn, params=tuple(params))
     conn.close()
     return df
 
-def excluir_meta(user_id, categoria):
+def excluir_meta(user_id, categoria, mes, ano):
     conn = get_connection()
     c = conn.cursor()
-    c.execute("DELETE FROM metas WHERE category=%s AND user_id=%s", (categoria, user_id))
+    c.execute("DELETE FROM metas WHERE category=%s AND user_id=%s AND mes=%s AND ano=%s", (categoria, user_id, mes, ano))
     conn.commit()
     conn.close()
     return True
+
+def listar_meses_com_metas(user_id):
+    """Retorna lista de (mes, ano) que possuem metas cadastradas"""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT DISTINCT mes, ano FROM metas WHERE user_id = %s ORDER BY ano DESC, mes DESC", (user_id,))
+    dados = c.fetchall()
+    conn.close()
+    return dados # Lista de tuplas [(12, 2025), (11, 2025)...]
 
 # --- FUNÇÕES: CARTÕES DE CRÉDITO ---
 
@@ -476,7 +528,7 @@ def excluir_recorrencia(user_id, id_rec):
     conn.close()
     return True
 
-# ------------------------ Reserva (ATUALIZADO) -------------------------------
+# ------------------------ Reserva (COMPLETA) -------------------------------
 
 def salvar_reserva_conta(user_id, nome, tipo, indice, taxa, meta):
     conn = get_connection()
@@ -570,7 +622,7 @@ def carregar_extrato_reserva(user_id):
 
 def migrar_dados_antigos_para_reserva(user_id):
     """
-    Migração Inteligente V2 (Com Resgates/Receitas):
+    Migração Inteligente V2:
     1. Cria/Recupera Reserva Geral.
     2. Busca Despesas (Aportes) e SOMA no saldo.
     3. Busca Receitas (Resgates) e SUBTRAI do saldo.
@@ -621,7 +673,6 @@ def migrar_dados_antigos_para_reserva(user_id):
         count += 1
 
     # 3. Busca e Migra RESGATES (Receitas)
-    # Critério: Receitas que vieram de Resgates ou Investimentos
     df_resgates = pd.read_sql_query("""
         SELECT * FROM lancamentos 
         WHERE user_id = %s 
