@@ -5,6 +5,11 @@ import bcrypt
 import uuid
 from datetime import datetime, timedelta
 
+# --- HELPER: LIMPAR CACHE ---
+def clear_cache():
+    """Limpa o cache do Streamlit para forçar recarregamento de dados."""
+    st.cache_data.clear()
+
 # Função para conectar ao Supabase usando st.secrets
 def get_connection():
     return psycopg2.connect(st.secrets["DATABASE_URL"])
@@ -73,7 +78,6 @@ def init_db():
         c.execute("SELECT column_name FROM information_schema.columns WHERE table_name='metas' AND column_name='mes'")
         if c.fetchone() is None:
             # Se a tabela existe mas não tem 'mes', precisamos migrar a estrutura
-            # Verifica se a tabela existe de fato antes de tentar alterar
             c.execute("SELECT to_regclass('public.metas')")
             if c.fetchone()[0] is not None:
                 # 1. Renomeia a antiga
@@ -96,7 +100,7 @@ def init_db():
                 # 4. Remove a antiga
                 c.execute("DROP TABLE metas_old")
     except Exception as e:
-        pass # Erros de permissão ou tabela inexistente serão tratados pela criação padrão abaixo
+        pass 
 
     # Criação Padrão (se não existir)
     c.execute('''
@@ -137,7 +141,21 @@ def init_db():
         )
     ''')
 
-    # 8. Controle de Faturas
+    # 8. Recorrências
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS recorrencias (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER REFERENCES users(id),
+            nome TEXT,
+            valor NUMERIC,
+            categoria TEXT,
+            dia_vencimento INTEGER,
+            tipo TEXT,
+            ativa BOOLEAN DEFAULT TRUE
+        )
+    ''')
+
+    # 9. Controle de Faturas
     c.execute('''
         CREATE TABLE IF NOT EXISTS faturas_controle (
             user_id INTEGER REFERENCES users(id),
@@ -150,7 +168,7 @@ def init_db():
         )
     ''')
     
-    # 9. Reservas (COM ÍNDICE E TAXA)
+    # 10. Reservas (COM ÍNDICE E TAXA)
     c.execute('''
         CREATE TABLE IF NOT EXISTS reservas (
             id SERIAL PRIMARY KEY,
@@ -165,7 +183,7 @@ def init_db():
         )
     ''')
 
-    # 10. Transações da Reserva
+    # 11. Transações da Reserva
     c.execute('''
         CREATE TABLE IF NOT EXISTS reserva_transacoes (
             id SERIAL PRIMARY KEY,
@@ -239,7 +257,7 @@ def verificar_login(username, password):
             return {"id": user_id, "name": name, "username": username}
     return None
 
-# --- FUNÇÕES DE LANÇAMENTOS (CAIXA) ---
+# --- LANÇAMENTOS (CAIXA) ---
 
 def salvar_lancamento(user_id, dados: dict):
     conn = get_connection()
@@ -250,6 +268,7 @@ def salvar_lancamento(user_id, dados: dict):
     ''', (user_id, dados['data'], dados['tipo'], dados['categoria'], dados['subcategoria'], dados['descricao'], dados['valor'], dados['conta'], dados['forma_pagamento'], dados['status']))
     conn.commit()
     conn.close()
+    clear_cache() # Limpa cache para atualizar a tela
 
 def atualizar_lancamento(user_id, id_lancamento, dados: dict):
     conn = get_connection()
@@ -261,8 +280,9 @@ def atualizar_lancamento(user_id, id_lancamento, dados: dict):
     ''', (dados['data'], dados['tipo'], dados['categoria'], dados['subcategoria'], dados['descricao'], dados['valor'], dados['conta'], dados['forma_pagamento'], dados['status'], id_lancamento, user_id))
     conn.commit()
     conn.close()
-    return True
+    clear_cache()
 
+@st.cache_data(ttl=600) # Cache de 10 min
 def carregar_dados(user_id):
     conn = get_connection()
     df = pd.read_sql_query("SELECT * FROM lancamentos WHERE user_id = %s", conn, params=(user_id,))
@@ -277,9 +297,10 @@ def excluir_lancamento(user_id, id_lancamento):
     rows = c.rowcount
     conn.commit()
     conn.close()
+    clear_cache()
     return rows > 0
 
-# --- FUNÇÕES DE INVESTIMENTOS ---
+# --- INVESTIMENTOS ---
 
 def salvar_investimento(user_id, dados: dict):
     conn = get_connection()
@@ -290,6 +311,7 @@ def salvar_investimento(user_id, dados: dict):
     ''', (user_id, dados['data'], dados['ticker'], dados['tipo_operacao'], dados['classe'], dados['quantidade'], dados['preco_unitario'], dados['taxas'], dados['total_operacao'], dados['notas']))
     conn.commit()
     conn.close()
+    clear_cache()
 
 def atualizar_investimento(user_id, id_inv, dados: dict):
     conn = get_connection()
@@ -301,8 +323,9 @@ def atualizar_investimento(user_id, id_inv, dados: dict):
     ''', (dados['data'], dados['ticker'], dados['tipo_operacao'], dados['classe'], dados['quantidade'], dados['preco_unitario'], dados['taxas'], dados['total_operacao'], dados['notas'], id_inv, user_id))
     conn.commit()
     conn.close()
-    return True
+    clear_cache()
 
+@st.cache_data(ttl=600)
 def carregar_investimentos(user_id):
     conn = get_connection()
     df = pd.read_sql_query("SELECT * FROM investimentos WHERE user_id = %s", conn, params=(user_id,))
@@ -317,9 +340,10 @@ def excluir_investimento(user_id, id_investimento):
     rows = c.rowcount
     conn.commit()
     conn.close()
+    clear_cache()
     return rows > 0
 
-# --- FUNÇÕES DE METAS (ATUALIZADAS PARA MENSAL) ---
+# --- METAS (MENSAL) ---
 
 def salvar_meta(user_id, categoria, valor, mes, ano):
     conn = get_connection()
@@ -333,7 +357,9 @@ def salvar_meta(user_id, categoria, valor, mes, ano):
     ''', (user_id, categoria, valor, mes, ano))
     conn.commit()
     conn.close()
+    clear_cache()
 
+@st.cache_data(ttl=600)
 def carregar_metas(user_id, mes=None, ano=None):
     conn = get_connection()
     sql = "SELECT * FROM metas WHERE user_id = %s"
@@ -353,8 +379,10 @@ def excluir_meta(user_id, categoria, mes, ano):
     c.execute("DELETE FROM metas WHERE category=%s AND user_id=%s AND mes=%s AND ano=%s", (categoria, user_id, mes, ano))
     conn.commit()
     conn.close()
+    clear_cache()
     return True
 
+@st.cache_data(ttl=600)
 def listar_meses_com_metas(user_id):
     """Retorna lista de (mes, ano) que possuem metas cadastradas"""
     conn = get_connection()
@@ -362,9 +390,9 @@ def listar_meses_com_metas(user_id):
     c.execute("SELECT DISTINCT mes, ano FROM metas WHERE user_id = %s ORDER BY ano DESC, mes DESC", (user_id,))
     dados = c.fetchall()
     conn.close()
-    return dados # Lista de tuplas [(12, 2025), (11, 2025)...]
+    return dados 
 
-# --- FUNÇÕES: CARTÕES DE CRÉDITO ---
+# --- CARTÕES DE CRÉDITO ---
 
 def salvar_cartao(user_id, nome, fechamento, vencimento):
     conn = get_connection()
@@ -375,7 +403,9 @@ def salvar_cartao(user_id, nome, fechamento, vencimento):
     ''', (user_id, nome, fechamento, vencimento))
     conn.commit()
     conn.close()
+    clear_cache()
 
+@st.cache_data(ttl=600)
 def carregar_cartoes(user_id):
     conn = get_connection()
     df = pd.read_sql_query("SELECT * FROM cartoes_credito WHERE user_id = %s", conn, params=(user_id,))
@@ -390,6 +420,7 @@ def excluir_cartao(user_id, cartao_id):
     c.execute("DELETE FROM faturas_controle WHERE cartao_id=%s AND user_id=%s", (cartao_id, user_id))
     conn.commit()
     conn.close()
+    clear_cache()
     return True
 
 def salvar_compra_credito(user_id, cartao_id, data_compra, descricao, categoria, valor_total, qtd_parcelas, dia_fechamento):
@@ -415,7 +446,9 @@ def salvar_compra_credito(user_id, cartao_id, data_compra, descricao, categoria,
 
     conn.commit()
     conn.close()
+    clear_cache()
 
+@st.cache_data(ttl=600)
 def carregar_fatura(user_id, cartao_id, mes_fatura_str):
     conn = get_connection()
     sql = """
@@ -436,9 +469,9 @@ def atualizar_item_fatura(user_id, id_item, nova_descricao, novo_valor, nova_dat
     ''', (nova_descricao, novo_valor, nova_data_compra, id_item, user_id))
     conn.commit()
     conn.close()
-    return True
+    clear_cache()
 
-# --- FUNÇÕES: CONTROLE DE PAGAMENTO DE FATURAS ---
+# --- CONTROLE DE PAGAMENTO DE FATURAS ---
 
 def registrar_pagamento_fatura(user_id, cartao_id, mes_referencia, status, valor, data_pagamento):
     conn = get_connection()
@@ -451,6 +484,7 @@ def registrar_pagamento_fatura(user_id, cartao_id, mes_referencia, status, valor
     ''', (user_id, cartao_id, mes_referencia, status, valor, data_pagamento))
     conn.commit()
     conn.close()
+    clear_cache()
 
 def excluir_pagamento_fatura(user_id, cartao_id, mes_referencia):
     conn = get_connection()
@@ -461,7 +495,7 @@ def excluir_pagamento_fatura(user_id, cartao_id, mes_referencia):
     ''', (user_id, cartao_id, mes_referencia))
     conn.commit()
     conn.close()
-    return True
+    clear_cache()
 
 def obter_status_fatura(user_id, cartao_id, mes_referencia):
     conn = get_connection()
@@ -476,7 +510,7 @@ def obter_status_fatura(user_id, cartao_id, mes_referencia):
         return {"status": result[0], "valor": result[1], "data": result[2]}
     return None
 
-# --- FUNÇÕES: RECORRÊNCIAS ---
+# --- RECORRÊNCIAS ---
 
 def salvar_recorrencia(user_id, nome, valor, categoria, dia_vencimento, tipo):
     conn = get_connection()
@@ -487,6 +521,7 @@ def salvar_recorrencia(user_id, nome, valor, categoria, dia_vencimento, tipo):
     ''', (user_id, nome, valor, categoria, dia_vencimento, tipo))
     conn.commit()
     conn.close()
+    clear_cache()
 
 def atualizar_recorrencia(user_id, id_rec, nome, valor, categoria, dia_vencimento, tipo):
     conn = get_connection()
@@ -498,8 +533,9 @@ def atualizar_recorrencia(user_id, id_rec, nome, valor, categoria, dia_venciment
     ''', (nome, valor, categoria, dia_vencimento, tipo, id_rec, user_id))
     conn.commit()
     conn.close()
-    return True
+    clear_cache()
 
+@st.cache_data(ttl=600)
 def carregar_recorrencias(user_id):
     conn = get_connection()
     df = pd.read_sql_query("SELECT * FROM recorrencias WHERE user_id = %s", conn, params=(user_id,))
@@ -512,9 +548,10 @@ def excluir_recorrencia(user_id, id_rec):
     c.execute("DELETE FROM recorrencias WHERE id=%s AND user_id=%s", (id_rec, user_id))
     conn.commit()
     conn.close()
+    clear_cache()
     return True
 
-# ------------------------ Reserva (COMPLETA) -------------------------------
+# --- RESERVAS (COMPLETA E OTIMIZADA) ---
 
 def salvar_reserva_conta(user_id, nome, tipo, indice, taxa, meta):
     conn = get_connection()
@@ -548,7 +585,9 @@ def salvar_reserva_conta(user_id, nome, tipo, indice, taxa, meta):
             pass
     finally:
         conn.close()
+        clear_cache()
 
+@st.cache_data(ttl=600)
 def carregar_reservas(user_id):
     conn = get_connection()
     # Tenta buscar com as novas colunas
@@ -570,21 +609,16 @@ def excluir_reserva_conta(user_id, res_id):
     c.execute("DELETE FROM reservas WHERE id=%s AND user_id=%s", (res_id, user_id))
     conn.commit()
     conn.close()
+    clear_cache()
 
 def salvar_transacao_reserva(user_id, res_id, data, tipo, valor, desc):
-    """
-    Registra aporte/retirada/rendimento e atualiza o saldo da reserva.
-    """
     conn = get_connection()
     c = conn.cursor()
-    
-    # 1. Registra a transação
     c.execute('''
         INSERT INTO reserva_transacoes (user_id, reserva_id, data, tipo, valor, descricao)
         VALUES (%s, %s, %s, %s, %s, %s)
     ''', (user_id, res_id, data, tipo, valor, desc))
     
-    # 2. Atualiza o saldo na tabela 'reservas'
     if tipo in ['Aporte', 'Rendimento']:
         c.execute("UPDATE reservas SET saldo_atual = saldo_atual + %s WHERE id=%s", (valor, res_id))
     elif tipo == 'Resgate':
@@ -592,7 +626,9 @@ def salvar_transacao_reserva(user_id, res_id, data, tipo, valor, desc):
         
     conn.commit()
     conn.close()
+    clear_cache()
 
+@st.cache_data(ttl=600)
 def carregar_extrato_reserva(user_id):
     conn = get_connection()
     sql = """
@@ -621,19 +657,16 @@ def migrar_dados_antigos_para_reserva(user_id):
     res = c.fetchone()
     
     if not res:
-        # Se não existe, cria (com coluna rentabilidade padrão)
-        # Tenta inserir com novas colunas, se falhar vai nas antigas (retrocompatibilidade básica)
+        # Se não existe, cria
         try:
             c.execute("INSERT INTO reservas (user_id, nome, tipo_aplicacao, indice, taxa, rentabilidade, meta_valor) VALUES (%s, 'Reserva Migrada (Geral)', 'Indefinido', 'CDI', 100, '100% CDI', 0) RETURNING id", (user_id,))
         except:
             conn.rollback()
             c.execute("INSERT INTO reservas (user_id, nome, tipo_aplicacao, meta_valor) VALUES (%s, 'Reserva Migrada (Geral)', 'Indefinido', 0) RETURNING id", (user_id,))
-        
         res_id = c.fetchone()[0]
         conn.commit()
     else:
         res_id = res[0]
-        # Zera o saldo e transações antigas dessa reserva para recalcular tudo do zero sem duplicar
         c.execute("UPDATE reservas SET saldo_atual = 0 WHERE id=%s", (res_id,))
         c.execute("DELETE FROM reserva_transacoes WHERE reserva_id=%s", (res_id,))
         conn.commit()
@@ -641,7 +674,6 @@ def migrar_dados_antigos_para_reserva(user_id):
     count = 0
     
     # 2. Busca e Migra APORTES (Despesas)
-    # Critério: Categorias antigas de investimento/reserva
     df_aportes = pd.read_sql_query("""
         SELECT * FROM lancamentos 
         WHERE user_id = %s 
@@ -677,16 +709,13 @@ def migrar_dados_antigos_para_reserva(user_id):
             
     conn.commit()
     conn.close()
+    clear_cache()
     return count
 
-# ------------------------ Notificações --------------------------
+# --- NOTIFICAÇÕES (LEITURA APENAS) ---
 
 def buscar_pendencias_proximas(user_id):
-    """
-    Busca lançamentos (Caixa) com status Pendente/Agendado para Hoje ou Amanhã.
-    """
     conn = get_connection()
-    # Busca itens onde a data é Hoje OU Amanhã (INTERVAL '1 day')
     sql = """
         SELECT descricao, valor, data, conta 
         FROM lancamentos 
@@ -697,3 +726,66 @@ def buscar_pendencias_proximas(user_id):
     df = pd.read_sql_query(sql, conn, params=(user_id,))
     conn.close()
     return df
+
+# --- PROJEÇÃO / SALDO FUTURO (LEITURAS OTIMIZADAS) ---
+
+@st.cache_data(ttl=300)
+def calcular_saldo_atual(user_id):
+    """Retorna o saldo líquido atual (apenas contas correntes/carteira)"""
+    conn = get_connection()
+    df = pd.read_sql_query("SELECT tipo, valor FROM lancamentos WHERE user_id = %s AND status = 'Pago/Recebido'", conn, params=(user_id,))
+    conn.close()
+    
+    receitas = df[df['tipo'] == 'Receita']['valor'].sum()
+    despesas = df[df['tipo'] == 'Despesa']['valor'].sum()
+    return receitas - despesas
+
+@st.cache_data(ttl=300)
+def buscar_faturas_futuras(user_id):
+    """Agrupa as parcelas futuras de cartão por data de vencimento"""
+    conn = get_connection()
+    sql = """
+        SELECT 
+            lc.mes_fatura, 
+            cc.dia_vencimento,
+            SUM(lc.valor_parcela) as total_fatura
+        FROM lancamentos_cartao lc
+        JOIN cartoes_credito cc ON lc.cartao_id = cc.id
+        WHERE lc.user_id = %s
+        AND lc.mes_fatura >= CURRENT_DATE
+        GROUP BY lc.mes_fatura, cc.dia_vencimento
+    """
+    df = pd.read_sql_query(sql, conn, params=(user_id,))
+    conn.close()
+    return df
+
+@st.cache_data(ttl=300)
+def buscar_metas_saldo_restante(user_id, mes, ano):
+    """
+    Calcula quanto falta gastar de cada meta no mês atual.
+    """
+    conn = get_connection()
+    # 1. Busca Metas
+    df_metas = pd.read_sql_query("SELECT categoria, valor_meta FROM metas WHERE user_id=%s AND mes=%s AND ano=%s", 
+                                 conn, params=(user_id, mes, ano))
+    if df_metas.empty:
+        conn.close()
+        return pd.DataFrame()
+
+    # 2. Busca Gastos Reais
+    sql_gastos = """
+        SELECT categoria, SUM(valor) as gasto_real 
+        FROM lancamentos 
+        WHERE user_id=%s AND tipo='Despesa' 
+        AND EXTRACT(MONTH FROM data) = %s AND EXTRACT(YEAR FROM data) = %s
+        GROUP BY categoria
+    """
+    df_gastos = pd.read_sql_query(sql_gastos, conn, params=(user_id, mes, ano))
+    conn.close()
+    
+    # 3. Cruza os dados
+    df_final = pd.merge(df_metas, df_gastos, on='categoria', how='left')
+    df_final['gasto_real'] = df_final['gasto_real'].fillna(0)
+    df_final['restante'] = df_final['valor_meta'] - df_final['gasto_real']
+    
+    return df_final[df_final['restante'] > 0]
