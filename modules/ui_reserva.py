@@ -5,9 +5,8 @@ from datetime import date
 from modules.database import (
     salvar_reserva_conta, carregar_reservas, salvar_transacao_reserva, 
     carregar_extrato_reserva, migrar_dados_antigos_para_reserva, 
-    salvar_lancamento, excluir_reserva_conta
+    salvar_lancamento, excluir_reserva_conta, carregar_dados
 )
-from modules.database import carregar_dados # Para calcular sobrevivência
 
 def show_reserva():
     if 'user_id' not in st.session_state: return
@@ -15,160 +14,147 @@ def show_reserva():
 
     st.header("🛡️ Reserva & Segurança Financeira")
     
-    # --- BOTÃO DE MIGRAÇÃO (Visível apenas se necessário) ---
-    with st.expander("🔧 Ferramentas de Sistema", expanded=False):
-        st.write("Se você já usava o sistema e tinha lançamentos na categoria 'Investimentos (Aportes)', clique abaixo para mover tudo para cá.")
-        if st.button("🔄 Migrar Dados Antigos para Reserva"):
+    # Ferramenta de Migração Inteligente
+    with st.expander("🔧 Ferramentas de Sistema (Correção de Saldo)", expanded=False):
+        st.write("Esta ferramenta busca lançamentos antigos de Aporte (Despesa) e Resgate (Receita) e recalcula o saldo das reservas.")
+        if st.button("🔄 Migrar (Recalcular Saldo Completo)"):
             qtd = migrar_dados_antigos_para_reserva(user_id)
             if qtd > 0:
-                st.success(f"{qtd} registros migrados com sucesso!")
+                st.success(f"{qtd} transações migradas e saldo recalculado!")
                 st.rerun()
             else:
-                st.info("Nenhum registro antigo encontrado para migrar.")
+                st.info("Nenhum lançamento antigo encontrado para migrar.")
 
-    tab_visao, tab_operar, tab_config = st.tabs(["📊 Visão Geral & Rendimento", "💰 Aportar / Resgatar / Atualizar", "⚙️ Configurar Contas"])
+    tab_visao, tab_operar, tab_config = st.tabs(["📊 Visão Geral", "💰 Movimentações", "⚙️ Configurar"])
 
     df_reservas = carregar_reservas(user_id)
     
-    # ===================================================
-    # ABA 1: VISÃO GERAL
-    # ===================================================
+    # --- ABA 1: VISÃO GERAL ---
     with tab_visao:
         if df_reservas.empty:
-            st.warning("Nenhuma reserva configurada. Vá na aba 'Configurar Contas'.")
+            st.warning("Nenhuma reserva encontrada. Vá na aba 'Configurar' para criar a primeira.")
         else:
             saldo_total = df_reservas['saldo_atual'].sum()
             meta_total = df_reservas['meta_valor'].sum()
             
-            # 1. CÁLCULO DE SOBREVIVÊNCIA (RUNWAY)
-            # Pega média de despesas dos últimos 3 meses do Dashboard
+            # Cálculo Runway (Sobrevivência)
             df_dash = carregar_dados(user_id)
             media_gastos = 0
             if not df_dash.empty:
                 df_dash['data'] = pd.to_datetime(df_dash['data'])
-                # Filtra últimos 90 dias
+                # Média dos últimos 3 meses
                 mask = (df_dash['data'] > pd.Timestamp.now() - pd.DateOffset(days=90)) & (df_dash['tipo'] == 'Despesa')
                 total_90d = df_dash[mask]['valor'].sum()
                 media_gastos = total_90d / 3 if total_90d > 0 else 0
             
             meses_sobrevivencia = saldo_total / media_gastos if media_gastos > 0 else 0
             
-            # KPIs
+            # Big Numbers
             c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Saldo Total Guardado", f"R$ {saldo_total:,.2f}")
-            c2.metric("Meta de Segurança", f"R$ {meta_total:,.2f}")
-            c3.metric("Custo de Vida Médio", f"R$ {media_gastos:,.2f}/mês", help="Baseado nos últimos 3 meses de despesas.")
-            c4.metric("Tempo de Sobrevivência", f"{meses_sobrevivencia:.1f} Meses", delta="Proteção", delta_color="normal")
+            c1.metric("Saldo Total", f"R$ {saldo_total:,.2f}")
+            c2.metric("Meta Total", f"R$ {meta_total:,.2f}")
+            c3.metric("Gasto Médio Mensal", f"R$ {media_gastos:,.2f}")
+            c4.metric("Autonomia", f"{meses_sobrevivencia:.1f} Meses", delta="Runway")
             
-            st.progress(min(saldo_total / meta_total, 1.0) if meta_total > 0 else 0, text=f"Progresso da Meta: {saldo_total/meta_total*100:.1f}%")
+            if meta_total > 0:
+                st.progress(min(saldo_total / meta_total, 1.0), text=f"Progresso da Meta: {saldo_total/meta_total*100:.1f}%")
             
             st.divider()
             
-            g1, g2 = st.columns(2)
+            # Tabela de Potes (Agora com Rentabilidade formatada)
+            st.subheader("Meus Potes de Reserva")
             
-            # Gráfico de Composição
-            with g1:
-                fig_pie = px.pie(df_reservas, values='saldo_atual', names='nome', title="Divisão das Reservas", hole=0.4)
-                st.plotly_chart(fig_pie, use_container_width=True)
+            cols_to_show = ['nome', 'tipo_aplicacao', 'saldo_atual', 'meta_valor']
+            # O banco gera a coluna 'rentabilidade' (Ex: "110% CDI") automaticamente na inserção
+            if 'rentabilidade' in df_reservas.columns:
+                cols_to_show.insert(2, 'rentabilidade')
             
-            # Gráfico de Histórico
-            with g2:
-                df_ext = carregar_extrato_reserva(user_id)
-                if not df_ext.empty:
-                    # Cria evolução acumulada
-                    df_ext = df_ext.sort_values('data')
-                    # Precisamos reconstruir o saldo dia a dia. Simplificação: Saldo por transação
-                    # Idealmente seria complexo, vamos mostrar Barras de Movimentação
-                    fig_bar = px.bar(df_ext, x='data', y='valor', color='tipo', title="Histórico de Movimentações", barmode='group')
-                    st.plotly_chart(fig_bar, use_container_width=True)
-                else:
-                    st.info("Sem histórico para gráfico.")
+            st.dataframe(
+                df_reservas[cols_to_show],
+                use_container_width=True,
+                column_config={
+                    "saldo_atual": st.column_config.NumberColumn("Saldo Atual", format="R$ %.2f"),
+                    "meta_valor": st.column_config.NumberColumn("Meta", format="R$ %.2f"),
+                    "rentabilidade": "Rendimento Base"
+                }
+            )
 
-    # ===================================================
-    # ABA 2: OPERAÇÕES (Aporte, Resgate, Rendimento)
-    # ===================================================
+    # --- ABA 2: OPERAÇÕES ---
     with tab_operar:
-        st.subheader("Movimentar Reserva")
+        st.subheader("Nova Movimentação")
         if df_reservas.empty:
-            st.warning("Crie uma conta na aba ao lado.")
+            st.warning("Sem reservas cadastradas.")
         else:
-            tipo_mov = st.radio("O que você quer fazer?", ["➕ Aportar (Guardar)", "➖ Resgatar (Usar)", "📈 Atualizar Rendimento"], horizontal=True)
+            tipo_mov = st.radio("Ação", ["➕ Aportar (Guardar)", "➖ Resgatar (Usar)", "📈 Render Juros (Atualizar)"], horizontal=True)
             
-            with st.form("form_mov_reserva"):
-                reserva_nome = st.selectbox("Qual Reserva?", df_reservas['nome'].tolist())
+            with st.form("form_mov"):
+                reserva_nome = st.selectbox("Selecione a Reserva", df_reservas['nome'].tolist())
                 res_id = int(df_reservas[df_reservas['nome'] == reserva_nome]['id'].values[0])
                 
-                col_a, col_b = st.columns(2)
-                data_mov = col_a.date_input("Data", date.today())
-                valor = col_b.number_input("Valor (R$)", min_value=0.01)
+                c_data, c_val = st.columns(2)
+                d_mov = c_data.date_input("Data", date.today())
+                val = c_val.number_input("Valor (R$)", min_value=0.01)
+                desc = st.text_input("Descrição", value="Rendimento Mensal" if "Render" in tipo_mov else "")
                 
-                desc = st.text_input("Descrição", value="Rendimento Mensal" if tipo_mov == "📈 Atualizar Rendimento" else "")
+                conta_cx = None
+                if "Aportar" in tipo_mov:
+                    st.info("ℹ️ Isso lançará automaticamente uma DESPESA no seu Caixa.")
+                    conta_cx = st.selectbox("Saiu de qual conta?", ["Nubank", "Bradesco", "Itaú", "Santander", "Caixa", "Carteira", "Inter"])
+                elif "Resgatar" in tipo_mov:
+                    st.info("ℹ️ Isso lançará automaticamente uma RECEITA no seu Caixa.")
+                    conta_cx = st.selectbox("Entrou em qual conta?", ["Nubank", "Bradesco", "Itaú", "Santander", "Caixa", "Carteira", "Inter"])
                 
-                conta_origem = None
-                if tipo_mov == "➕ Aportar (Guardar)":
-                    st.info("Isso também criará uma DESPESA no seu Caixa (Lançamentos) automaticamente.")
-                    conta_origem = st.selectbox("De onde sai o dinheiro?", ["Nubank", "Bradesco", "Itaú", "Santander", "Caixa", "Carteira"])
-                
-                elif tipo_mov == "➖ Resgatar (Usar)":
-                    st.info("Isso criará uma RECEITA no seu Caixa automaticamente.")
-                    conta_origem = st.selectbox("Para onde vai o dinheiro?", ["Nubank", "Bradesco", "Itaú", "Santander", "Caixa", "Carteira"])
-                
-                if st.form_submit_button("Confirmar Operação"):
+                if st.form_submit_button("Confirmar Transação"):
+                    tipo_db = 'Rendimento'
+                    if "Aportar" in tipo_mov: tipo_db = 'Aporte'
+                    elif "Resgatar" in tipo_mov: tipo_db = 'Resgate'
+                    
                     # 1. Salva na Reserva
-                    tipo_banco = 'Rendimento'
-                    if "Aportar" in tipo_mov: tipo_banco = 'Aporte'
-                    elif "Resgatar" in tipo_mov: tipo_banco = 'Resgate'
+                    salvar_transacao_reserva(user_id, res_id, d_mov, tipo_db, val, desc)
                     
-                    salvar_transacao_reserva(user_id, res_id, data_mov, tipo_banco, valor, desc)
-                    
-                    # 2. Espelha no Caixa (Lançamentos) se for Aporte ou Resgate
-                    if tipo_banco == 'Aporte':
-                        dados_lanc = {
-                            "data": data_mov, "tipo": "Despesa", 
-                            "categoria": "Financeiro", "subcategoria": "Transferência para Reserva",
-                            "descricao": f"Aporte: {reserva_nome}", "valor": valor,
-                            "conta": conta_origem, "forma_pagamento": "Transferência", "status": "Pago/Recebido"
-                        }
-                        salvar_lancamento(user_id, dados_lanc)
+                    # 2. Espelha no Caixa (Lançamentos)
+                    if tipo_db == 'Aporte':
+                        l_dados = {"data": d_mov, "tipo": "Despesa", "categoria": "Financeiro", "subcategoria": "Transf. Reserva", "descricao": f"Aporte: {reserva_nome}", "valor": val, "conta": conta_cx, "forma_pagamento": "Transferência", "status": "Pago/Recebido"}
+                        salvar_lancamento(user_id, l_dados)
+                    elif tipo_db == 'Resgate':
+                        l_dados = {"data": d_mov, "tipo": "Receita", "categoria": "Financeiro", "subcategoria": "Resgate Reserva", "descricao": f"Resgate: {reserva_nome}", "valor": val, "conta": conta_cx, "forma_pagamento": "Transferência", "status": "Pago/Recebido"}
+                        salvar_lancamento(user_id, l_dados)
                         
-                    elif tipo_banco == 'Resgate':
-                        dados_lanc = {
-                            "data": data_mov, "tipo": "Receita", 
-                            "categoria": "Financeiro", "subcategoria": "Resgate de Reserva",
-                            "descricao": f"Resgate: {reserva_nome}", "valor": valor,
-                            "conta": conta_origem, "forma_pagamento": "Transferência", "status": "Pago/Recebido"
-                        }
-                        salvar_lancamento(user_id, dados_lanc)
-                        
-                    st.success("Operação realizada e saldos atualizados!")
+                    st.success("Sucesso! Saldo atualizado.")
                     st.rerun()
-
+            
             st.divider()
             st.subheader("Extrato Recente")
-            df_ext = carregar_extrato_reserva(user_id)
-            if not df_ext.empty:
-                st.dataframe(df_ext[['data', 'nome_reserva', 'tipo', 'valor', 'descricao']], use_container_width=True)
+            st.dataframe(carregar_extrato_reserva(user_id), use_container_width=True)
 
-    # ===================================================
-    # ABA 3: CONFIGURAR
-    # ===================================================
+    # --- ABA 3: CONFIGURAR (FLEXÍVEL & ESTRUTURADA) ---
     with tab_config:
-        st.subheader("Cadastrar Novo Pote")
-        with st.form("form_new_reserva"):
-            nome_pote = st.text_input("Nome (Ex: NuBank Caixinha, CDB Inter)")
-            tipo_aplic = st.selectbox("Tipo de Aplicação", ["CDB 100% CDI", "CDB Liquidez Diária", "Tesouro Selic", "LCI/LCA", "Poupança", "Outro"])
-            meta = st.number_input("Meta para este pote (R$)", min_value=0.0)
+        st.subheader("Criar Nova Reserva")
+        
+        with st.form("form_new"):
+            nome = st.text_input("Nome da Reserva (Ex: Fundo de Emergência)")
             
-            if st.form_submit_button("Criar Reserva"):
-                salvar_reserva_conta(user_id, nome_pote, tipo_aplic, meta)
-                st.success("Reserva criada!")
+            c1, c2 = st.columns(2)
+            tipo = c1.selectbox("Tipo de Aplicação", ["CDB", "LCI/LCA", "Tesouro Direto", "Poupança", "Fundo DI", "Caixinha/Cofre", "Outro"])
+            meta = c2.number_input("Meta para este pote (R$)", min_value=0.0)
+            
+            st.markdown("### 📊 Rentabilidade")
+            c3, c4 = st.columns(2)
+            # Input Estruturado conforme solicitado
+            indice = c3.selectbox("Índice Base", ["CDI", "Selic", "IPCA", "Pré-fixado", "TR", "Poupança", "Outro"])
+            taxa = c4.number_input("Taxa (%)", min_value=0.0, value=100.0, step=0.1, help="Ex: Digite 110 para 110% do CDI. Digite 6.5 para IPCA+6.5%.")
+            
+            if st.form_submit_button("Salvar Nova Reserva"):
+                # Envia os dados estruturados para o database atualizado
+                salvar_reserva_conta(user_id, nome, tipo, indice, taxa, meta)
+                st.success("Reserva criada com sucesso!")
                 st.rerun()
         
         if not df_reservas.empty:
             st.divider()
-            st.write("Excluir Reserva (Cuidado: Apaga histórico dela)")
-            res_del = st.selectbox("Selecione", df_reservas['nome'].tolist())
-            if st.button("🗑️ Excluir Selecionada"):
-                rid = int(df_reservas[df_reservas['nome'] == res_del]['id'].values[0])
+            st.write("Gerenciar Reservas Existentes")
+            del_sel = st.selectbox("Selecione para Excluir", df_reservas['nome'].tolist())
+            if st.button("🗑️ Apagar Reserva Selecionada"):
+                rid = int(df_reservas[df_reservas['nome'] == del_sel]['id'].values[0])
                 excluir_reserva_conta(user_id, rid)
                 st.rerun()

@@ -131,28 +131,29 @@ def init_db():
         )
     ''')
     
-    # --- CORREÇÃO: As tabelas novas DEVEM estar ANTES do conn.close() ---
-    
-    # 10. Reservas (Os "Potes" ou Contas)
+    # 10. Reservas (ATUALIZADO COM ÍNDICE E TAXA)
     c.execute('''
         CREATE TABLE IF NOT EXISTS reservas (
             id SERIAL PRIMARY KEY,
             user_id INTEGER REFERENCES users(id),
             nome TEXT,
             tipo_aplicacao TEXT,
+            indice TEXT, -- Ex: CDI, Selic
+            taxa NUMERIC, -- Ex: 110 (para 110%), 6.5 (para IPCA+6.5)
+            rentabilidade TEXT, -- Mantido para compatibilidade ou exibição (Ex: "110% CDI")
             saldo_atual NUMERIC DEFAULT 0.0,
             meta_valor NUMERIC DEFAULT 0.0
         )
     ''')
 
-    # 11. Transações da Reserva (Histórico)
+    # 11. Transações da Reserva
     c.execute('''
         CREATE TABLE IF NOT EXISTS reserva_transacoes (
             id SERIAL PRIMARY KEY,
             user_id INTEGER REFERENCES users(id),
             reserva_id INTEGER REFERENCES reservas(id),
             data DATE,
-            tipo TEXT,
+            tipo TEXT, -- 'Aporte', 'Resgate', 'Rendimento'
             valor NUMERIC,
             descricao TEXT
         )
@@ -475,21 +476,51 @@ def excluir_recorrencia(user_id, id_rec):
     conn.close()
     return True
 
-# ------------------------ Reserva -------------------------------
+# ------------------------ Reserva (ATUALIZADO) -------------------------------
 
-def salvar_reserva_conta(user_id, nome, tipo, meta):
+def salvar_reserva_conta(user_id, nome, tipo, indice, taxa, meta):
     conn = get_connection()
     c = conn.cursor()
-    c.execute('''
-        INSERT INTO reservas (user_id, nome, tipo_aplicacao, meta_valor)
-        VALUES (%s, %s, %s, %s)
-    ''', (user_id, nome, tipo, meta))
-    conn.commit()
-    conn.close()
+    
+    # 1. Tenta inserir com as colunas novas
+    try:
+        # Formata string de rentabilidade para exibição
+        rentab_display = f"{taxa}% {indice}"
+        c.execute('''
+            INSERT INTO reservas (user_id, nome, tipo_aplicacao, indice, taxa, rentabilidade, meta_valor)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        ''', (user_id, nome, tipo, indice, taxa, rentab_display, meta))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        # Se falhar (colunas não existem), tenta criar as colunas e tenta de novo
+        try:
+            c.execute("ALTER TABLE reservas ADD COLUMN IF NOT EXISTS indice TEXT")
+            c.execute("ALTER TABLE reservas ADD COLUMN IF NOT EXISTS taxa NUMERIC")
+            c.execute("ALTER TABLE reservas ADD COLUMN IF NOT EXISTS rentabilidade TEXT")
+            conn.commit()
+            
+            rentab_display = f"{taxa}% {indice}"
+            c.execute('''
+                INSERT INTO reservas (user_id, nome, tipo_aplicacao, indice, taxa, rentabilidade, meta_valor)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ''', (user_id, nome, tipo, indice, taxa, rentab_display, meta))
+            conn.commit()
+        except:
+            pass
+    finally:
+        conn.close()
 
 def carregar_reservas(user_id):
     conn = get_connection()
-    df = pd.read_sql_query("SELECT * FROM reservas WHERE user_id = %s", conn, params=(user_id,))
+    # Tenta buscar com as novas colunas
+    try:
+        df = pd.read_sql_query("SELECT * FROM reservas WHERE user_id = %s", conn, params=(user_id,))
+    except:
+        conn.rollback()
+        # Fallback se a migração falhou (muito raro se o salvar rodar antes)
+        df = pd.read_sql_query("SELECT id, user_id, nome, tipo_aplicacao, saldo_atual, meta_valor FROM reservas WHERE user_id = %s", conn, params=(user_id,))
+        df['rentabilidade'] = "-" 
     conn.close()
     return df
 
@@ -539,52 +570,73 @@ def carregar_extrato_reserva(user_id):
 
 def migrar_dados_antigos_para_reserva(user_id):
     """
-    Procura lançamentos antigos de 'Investimentos (Aportes)' ou 'Reserva' 
-    e move para o novo módulo.
+    Migração Inteligente V2 (Com Resgates/Receitas):
+    1. Cria/Recupera Reserva Geral.
+    2. Busca Despesas (Aportes) e SOMA no saldo.
+    3. Busca Receitas (Resgates) e SUBTRAI do saldo.
     """
     conn = get_connection()
     c = conn.cursor()
     
-    # 1. Verifica se já existe uma reserva "Geral" (Migrada), se não cria
+    # 1. Cria ou recupera Reserva Geral
     c.execute("SELECT id FROM reservas WHERE user_id=%s AND nome='Reserva Migrada (Geral)'", (user_id,))
     res = c.fetchone()
     
     if not res:
-        c.execute("INSERT INTO reservas (user_id, nome, tipo_aplicacao, meta_valor) VALUES (%s, 'Reserva Migrada (Geral)', 'Indefinido', 0) RETURNING id", (user_id,))
+        # Se não existe, cria (com coluna rentabilidade padrão)
+        # Tenta inserir com novas colunas, se falhar vai nas antigas (retrocompatibilidade básica)
+        try:
+            c.execute("INSERT INTO reservas (user_id, nome, tipo_aplicacao, indice, taxa, rentabilidade, meta_valor) VALUES (%s, 'Reserva Migrada (Geral)', 'Indefinido', 'CDI', 100, '100% CDI', 0) RETURNING id", (user_id,))
+        except:
+            conn.rollback()
+            c.execute("INSERT INTO reservas (user_id, nome, tipo_aplicacao, meta_valor) VALUES (%s, 'Reserva Migrada (Geral)', 'Indefinido', 0) RETURNING id", (user_id,))
+        
         res_id = c.fetchone()[0]
         conn.commit()
     else:
         res_id = res[0]
-    
-    # 2. Busca lançamentos candidatos a migração
-    # Critério: Categoria contendo 'Reserva' ou 'Investimentos (Aportes)'
-    df_antigos = pd.read_sql_query("""
-        SELECT * FROM lancamentos 
-        WHERE user_id = %s 
-        AND (categoria ILIKE '%%Reserva%%' OR categoria = 'Investimentos (Aportes)')
-    """, conn, params=(user_id,))
+        # Zera o saldo e transações antigas dessa reserva para recalcular tudo do zero sem duplicar
+        c.execute("UPDATE reservas SET saldo_atual = 0 WHERE id=%s", (res_id,))
+        c.execute("DELETE FROM reserva_transacoes WHERE reserva_id=%s", (res_id,))
+        conn.commit()
     
     count = 0
-    if not df_antigos.empty:
-        for _, row in df_antigos.iterrows():
-            # Define se é aporte ou resgate
-            tipo_res = 'Aporte' if row['tipo'] == 'Despesa' else 'Resgate'
-            
-            # Insere no novo módulo
-            c.execute('''
-                INSERT INTO reserva_transacoes (user_id, reserva_id, data, tipo, valor, descricao)
-                VALUES (%s, %s, %s, %s, %s, %s)
-            ''', (user_id, res_id, row['data'], tipo_res, row['valor'], row['descricao']))
-            
-            # Atualiza saldo
-            if tipo_res == 'Aporte':
-                c.execute("UPDATE reservas SET saldo_atual = saldo_atual + %s WHERE id=%s", (row['valor'], res_id))
-            else:
-                c.execute("UPDATE reservas SET saldo_atual = saldo_atual - %s WHERE id=%s", (row['valor'], res_id))
-            
-            # Remove do antigo lançamentos para não duplicar conceito
-            c.execute("DELETE FROM lancamentos WHERE id=%s", (row['id'],))
-            count += 1
+    
+    # 2. Busca e Migra APORTES (Despesas)
+    # Critério: Categorias antigas de investimento/reserva
+    df_aportes = pd.read_sql_query("""
+        SELECT * FROM lancamentos 
+        WHERE user_id = %s 
+        AND tipo = 'Despesa'
+        AND (categoria ILIKE '%%Reserva%%' OR categoria ILIKE '%%Investimento%%' OR categoria = 'Investimentos (Aportes)')
+    """, conn, params=(user_id,))
+    
+    for _, row in df_aportes.iterrows():
+        c.execute('''
+            INSERT INTO reserva_transacoes (user_id, reserva_id, data, tipo, valor, descricao)
+            VALUES (%s, %s, %s, 'Aporte', %s, %s)
+        ''', (user_id, res_id, row['data'], row['valor'], f"Migrado: {row['descricao']}"))
+        c.execute("UPDATE reservas SET saldo_atual = saldo_atual + %s WHERE id=%s", (row['valor'], res_id))
+        c.execute("DELETE FROM lancamentos WHERE id=%s", (row['id'],))
+        count += 1
+
+    # 3. Busca e Migra RESGATES (Receitas)
+    # Critério: Receitas que vieram de Resgates ou Investimentos
+    df_resgates = pd.read_sql_query("""
+        SELECT * FROM lancamentos 
+        WHERE user_id = %s 
+        AND tipo = 'Receita'
+        AND (categoria ILIKE '%%Resgate%%' OR categoria ILIKE '%%Reserva%%' OR categoria ILIKE '%%Investimento%%' OR categoria = 'Resgates')
+    """, conn, params=(user_id,))
+    
+    for _, row in df_resgates.iterrows():
+        c.execute('''
+            INSERT INTO reserva_transacoes (user_id, reserva_id, data, tipo, valor, descricao)
+            VALUES (%s, %s, %s, 'Resgate', %s, %s)
+        ''', (user_id, res_id, row['data'], row['valor'], f"Migrado: {row['descricao']}"))
+        c.execute("UPDATE reservas SET saldo_atual = saldo_atual - %s WHERE id=%s", (row['valor'], res_id))
+        c.execute("DELETE FROM lancamentos WHERE id=%s", (row['id'],))
+        count += 1
             
     conn.commit()
     conn.close()
