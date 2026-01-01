@@ -365,7 +365,8 @@ def carregar_metas(user_id, mes=None, ano=None):
     sql = "SELECT * FROM metas WHERE user_id = %s"
     params = [user_id]
     
-    if mes and ano:
+    # CORREÇÃO IMPORTANTE: Use 'is not None' para que mes=0 (meta anual) funcione
+    if mes is not None and ano is not None:
         sql += " AND mes = %s AND ano = %s"
         params.extend([mes, ano])
         
@@ -376,7 +377,8 @@ def carregar_metas(user_id, mes=None, ano=None):
 def excluir_meta(user_id, categoria, mes, ano):
     conn = get_connection()
     c = conn.cursor()
-    c.execute("DELETE FROM metas WHERE category=%s AND user_id=%s AND mes=%s AND ano=%s", (categoria, user_id, mes, ano))
+    # CORREÇÃO IMPORTANTE: Trocado 'category' por 'categoria'
+    c.execute("DELETE FROM metas WHERE categoria=%s AND user_id=%s AND mes=%s AND ano=%s", (categoria, user_id, mes, ano))
     conn.commit()
     conn.close()
     clear_cache()

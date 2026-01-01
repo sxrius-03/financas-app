@@ -1,5 +1,3 @@
-# modules/constants.py
-
 CATEGORIAS = {
     "Despesa": {
         "Moradia": ["Aluguel", "Energia", "Água", "Internet", "Manutenção", "Condomínio"],
@@ -22,3 +20,11 @@ CATEGORIAS = {
 
 LISTA_CATEGORIAS_DESPESA = list(CATEGORIAS["Despesa"].keys())
 LISTA_CATEGORIAS_RECEITA = list(CATEGORIAS["Receita"].keys())
+LISTA_CATEGORIAS_INVESTIMENTO = [
+    "Reserva de Emergência", 
+    "Investimentos", 
+    "Aposentadoria", 
+    "Caixinha", 
+    "Poupança",
+    "Aportes"
+]
