@@ -316,22 +316,59 @@ def show_dashboard():
                 else:
                     st.info("Sem despesas registradas.")
 
-    # ===================================================
-    # ABA 3: VISÃO MENSAL (ATUALIZADA)
+# ===================================================
+    # ABA 3: VISÃO MENSAL (COM FILTRO DINÂMICO)
     # ===================================================
     with tab_mensal:
-        c_filt1, c_filt2 = st.columns(2)
-        sel_ano_m = c_filt1.selectbox("Ano", anos, key="sb_ano_mes")
-        meses_disp = {k:v for k,v in {1:"Janeiro", 2:"Fevereiro", 3:"Março", 4:"Abril", 5:"Maio", 6:"Junho", 7:"Julho", 8:"Agosto", 9:"Setembro", 10:"Outubro", 11:"Novembro", 12:"Dezembro"}.items()}
-        mes_atual_idx = datetime.now().month - 1
-        sel_mes_nome = c_filt2.selectbox("Mês", list(meses_disp.values()), index=mes_atual_idx, key="sb_mes_mes")
-        sel_mes_num = [k for k,v in meses_disp.items() if v == sel_mes_nome][0]
-        
-        df_mes = df[(df['Ano'] == sel_ano_m) & (df['Mes'] == sel_mes_num)]
-        
-        if df_mes.empty:
+        # Verifica se temos dados antes de tentar filtrar
+        if df.empty:
             st.warning(CONFIG_UI['GERAL']['msg_vazio'])
         else:
+            c_filt1, c_filt2 = st.columns(2)
+            
+            # 1. Filtra Anos que possuem dados
+            anos_disponiveis = sorted(df['Ano'].unique().tolist(), reverse=True)
+            sel_ano_m = c_filt1.selectbox("Ano", anos_disponiveis, key="sb_ano_mes")
+            
+            # 2. Filtra Meses que possuem dados NO ANO SELECIONADO
+            df_ano_filter = df[df['Ano'] == sel_ano_m]
+            meses_com_dados = sorted(df_ano_filter['Mes'].unique().tolist())
+            
+            # Dicionário completo para mapear Número -> Nome
+            mapa_meses = {
+                1:"Janeiro", 2:"Fevereiro", 3:"Março", 4:"Abril", 5:"Maio", 6:"Junho", 
+                7:"Julho", 8:"Agosto", 9:"Setembro", 10:"Outubro", 11:"Novembro", 12:"Dezembro"
+            }
+            
+            # Cria a lista de nomes apenas para os meses existentes
+            opcoes_meses = [mapa_meses[m] for m in meses_com_dados]
+            
+            # Lógica Inteligente de Seleção Padrão:
+            # Tenta selecionar o mês atual se ele tiver dados.
+            # Se não, seleciona o último mês disponível (o mais recente com dados).
+            mes_atual = datetime.now().month
+            nome_mes_atual = mapa_meses[mes_atual]
+            
+            idx_padrao = 0
+            if nome_mes_atual in opcoes_meses:
+                idx_padrao = opcoes_meses.index(nome_mes_atual)
+            else:
+                # Pega o último da lista (assumindo que sorted asc coloca Dezembro no fim)
+                idx_padrao = len(opcoes_meses) - 1 if opcoes_meses else 0
+            
+            sel_mes_nome = c_filt2.selectbox("Mês", opcoes_meses, index=idx_padrao, key="sb_mes_mes")
+            
+            # 3. Recupera o número do mês baseado no nome escolhido
+            # (Busca reversa no dicionário: Valor -> Chave)
+            sel_mes_num = [k for k, v in mapa_meses.items() if v == sel_mes_nome][0]
+            
+            # Filtra o DataFrame final
+            df_mes = df[(df['Ano'] == sel_ano_m) & (df['Mes'] == sel_mes_num)]
+            
+            if df_mes.empty:
+                # Teoricamente nunca vai entrar aqui com o filtro dinâmico, mas por segurança:
+                st.warning(CONFIG_UI['GERAL']['msg_vazio'])
+            else:
             rec_m = df_mes[df_mes['tipo'] == 'Receita']['valor'].sum()
             desp_m = df_mes[df_mes['tipo'] == 'Despesa']['valor'].sum()
             saldo_m = rec_m - desp_m
