@@ -1,17 +1,17 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, date
-# ATENÇÃO: Verifique se carregar_reservas está exportado no seu database.py, senão adicione-o.
 from modules.database import (
     carregar_dados, salvar_meta, carregar_metas, excluir_meta, 
     listar_meses_com_metas
 )
-# Tente importar listas de investimento, caso não existam, use listas genéricas
+# Importa as duas listas agora
 try:
     from modules.constants import LISTA_CATEGORIAS_DESPESA, LISTA_CATEGORIAS_INVESTIMENTO
 except ImportError:
+    # Fallback caso constants.py não tenha sido atualizado ainda
     from modules.constants import LISTA_CATEGORIAS_DESPESA
-    LISTA_CATEGORIAS_INVESTIMENTO = ["Reserva de Emergência", "Aposentadoria", "Viagem", "Carro Novo"]
+    LISTA_CATEGORIAS_INVESTIMENTO = ["Reserva de Emergência", "Aposentadoria", "Objetivos", "Investimentos"]
 
 def show_orcamento():
     if 'user_id' not in st.session_state: return
@@ -19,7 +19,6 @@ def show_orcamento():
 
     st.header("🎯 Gestão de Metas e Orçamento")
 
-    # Layout de Abas atualizado
     tab_monitor, tab_mensal, tab_anual = st.tabs([
         "📊 Monitoramento", 
         "🗓️ Metas Mensais", 
@@ -37,10 +36,8 @@ def show_orcamento():
         if not meses_com_metas:
             st.warning("Nenhuma meta definida ainda.")
         else:
-            # Filtro de Período
             mapa_meses = {0: "Anual", 1:"Jan", 2:"Fev", 3:"Mar", 4:"Abr", 5:"Mai", 6:"Jun", 7:"Jul", 8:"Ago", 9:"Set", 10:"Out", 11:"Nov", 12:"Dez"}
             
-            # Formata opções visualmente. Mes=0 indica meta anual.
             opcoes_formatadas = []
             dados_originais = []
             
@@ -49,7 +46,6 @@ def show_orcamento():
                 opcoes_formatadas.append(lbl)
                 dados_originais.append((m, a))
 
-            # Tenta selecionar o mês atual
             hj = date.today()
             lbl_atual = f"{mapa_meses[hj.month]} / {hj.year}"
             idx_padrao = opcoes_formatadas.index(lbl_atual) if lbl_atual in opcoes_formatadas else 0
@@ -59,63 +55,51 @@ def show_orcamento():
             
             st.divider()
 
-            # --- Carregamento de Dados ---
             df_metas = carregar_metas(user_id, mes=mes_sel, ano=ano_sel)
-            df_lancamentos = carregar_dados(user_id) # Assume que traz tudo (Despesas e Receitas/Investimentos)
+            df_lancamentos = carregar_dados(user_id)
             
-            # Garante datetime
             if not df_lancamentos.empty:
                 df_lancamentos['data'] = pd.to_datetime(df_lancamentos['data'])
 
-            # Função auxiliar para calcular progresso
             def calcular_progresso(df_metas_filtrada, tipo_meta):
                 if df_metas_filtrada.empty: return pd.DataFrame()
 
-                # Filtra lançamentos pelo período
                 mask_periodo = (df_lancamentos['data'].dt.year == ano_sel)
-                if mes_sel != 0: # Se não for anual, filtra mês
+                if mes_sel != 0:
                     mask_periodo = mask_periodo & (df_lancamentos['data'].dt.month == mes_sel)
                 
                 df_periodo = df_lancamentos[mask_periodo]
 
-                # Define filtro por tipo (Despesa vs Reserva/Investimento)
                 if tipo_meta == 'Despesa':
                     df_filtrado = df_periodo[df_periodo['tipo'] == 'Despesa']
                 else:
-                    # Ajuste conforme seu banco de dados (ex: 'Investimento' ou 'Transferência')
-                    df_filtrado = df_periodo[df_periodo['tipo'].isin(['Investimento', 'Reserva', 'Aplicação'])]
+                    # Considera tudo que não é despesa nem receita pura como potencial investimento/reserva
+                    df_filtrado = df_periodo[df_periodo['tipo'].isin(['Investimento', 'Reserva', 'Aplicação', 'Despesa'])]
+                    # Refina apenas pelas categorias que estão na lista de investimento
+                    df_filtrado = df_filtrado[df_filtrado['categoria'].isin(LISTA_CATEGORIAS_INVESTIMENTO)]
 
                 gastos = df_filtrado.groupby('categoria')['valor'].sum().reset_index()
                 
                 merged = pd.merge(df_metas_filtrada, gastos, on='categoria', how='left')
                 merged['valor'] = merged['valor'].fillna(0)
                 
-                # Lógica de Saldo/Progresso
                 if tipo_meta == 'Despesa':
                     merged['Saldo'] = merged['valor_meta'] - merged['valor']
                     merged['Progresso'] = (merged['valor'] / merged['valor_meta']).clip(0, 1)
                 else:
-                    # Para reservas: Saldo é quanto falta para atingir a meta
                     merged['Saldo'] = merged['valor_meta'] - merged['valor']
-                    # Progresso é quanto já guardou
                     merged['Progresso'] = (merged['valor'] / merged['valor_meta']).clip(0, 1)
 
                 return merged
 
-            # Separa metas de Despesa e Reserva (assumindo que você tem uma coluna 'tipo' na tabela metas ou deduz pela categoria)
-            # Como o schema atual de 'metas' pode não ter 'tipo', vamos deduzir pelas listas de categorias
-            
-            # Identifica quais metas são de Investimento
             df_metas['tipo_meta'] = df_metas['categoria'].apply(lambda x: 'Reserva' if x in LISTA_CATEGORIAS_INVESTIMENTO else 'Despesa')
             
             metas_despesa = df_metas[df_metas['tipo_meta'] == 'Despesa']
             metas_reserva = df_metas[df_metas['tipo_meta'] == 'Reserva']
 
-            # --- Exibição Despesas ---
             if not metas_despesa.empty:
                 st.subheader("💸 Orçamento de Gastos")
                 df_res_desp = calcular_progresso(metas_despesa, 'Despesa')
-                
                 st.dataframe(
                     df_res_desp[['categoria', 'valor_meta', 'valor', 'Saldo', 'Progresso']],
                     use_container_width=True,
@@ -128,15 +112,12 @@ def show_orcamento():
                     hide_index=True
                 )
                 
-                # Alertas de estouro
                 for _, row in df_res_desp[df_res_desp['valor'] > df_res_desp['valor_meta']].iterrows():
                     st.error(f"🚨 Você estourou **{row['categoria']}** em R$ {abs(row['Saldo']):.2f}!")
 
-            # --- Exibição Reservas ---
             if not metas_reserva.empty:
-                st.subheader("💰 Metas de Economia/Reserva")
+                st.subheader("💰 Metas de Economia")
                 df_res_invest = calcular_progresso(metas_reserva, 'Reserva')
-                
                 st.dataframe(
                     df_res_invest[['categoria', 'valor_meta', 'valor', 'Saldo', 'Progresso']],
                     use_container_width=True,
@@ -150,30 +131,18 @@ def show_orcamento():
                 )
 
     # ===================================================
-    # FUNÇÃO AUXILIAR DE FORMULÁRIO (USADA EM MENSAL E ANUAL)
+    # FUNÇÃO DO FORMULÁRIO (CORRIGIDA)
     # ===================================================
     def renderizar_gerenciador_metas(tipo_periodo="mensal"):
-        """
-        tipo_periodo: 'mensal' ou 'anual'
-        """
         is_anual = (tipo_periodo == "anual")
-        mes_fixo = 0 if is_anual else None
         
-        # 1. Carregar metas existentes para edição
-        # Se for anual, carrega metas com mes=0. Se mensal, carrega todas menos as 0.
         all_metas = carregar_metas(user_id)
-        
         if is_anual:
             metas_filtradas = all_metas[all_metas['mes'] == 0]
-            label_periodo = f"Meta para o Ano de {date.today().year}"
         else:
             metas_filtradas = all_metas[all_metas['mes'] != 0]
-            label_periodo = "Meta para Mês/Ano Específico"
 
-        # Criar lista de seleção para Edição
         opcoes_edicao = ["✨ Criar Nova Meta"]
-        
-        # Dicionário para mapear seleção -> dados
         mapa_dados = {}
         
         for idx, row in metas_filtradas.iterrows():
@@ -181,7 +150,6 @@ def show_orcamento():
                 lbl = f"{row['ano']} - {row['categoria']} (R$ {row['valor_meta']:.2f})"
             else:
                 lbl = f"{row['mes']:02d}/{row['ano']} - {row['categoria']} (R$ {row['valor_meta']:.2f})"
-            
             opcoes_edicao.append(lbl)
             mapa_dados[lbl] = row
 
@@ -189,96 +157,94 @@ def show_orcamento():
         with col_sel:
             selecao = st.selectbox(f"Selecione uma meta ({tipo_periodo}) para editar:", options=opcoes_edicao, key=f"sel_{tipo_periodo}")
         
-        # Variáveis de controle do formulário
         modo_edicao = selecao != "✨ Criar Nova Meta"
         dados_edit = mapa_dados.get(selecao) if modo_edicao else None
 
-        # Botão de excluir (só aparece se estiver editando)
         with col_del:
-            st.write("") # Espaçamento
+            st.write("") 
             st.write("") 
             if modo_edicao:
                 if st.button("🗑️ Excluir", key=f"del_{tipo_periodo}", type="primary"):
-                    # CORREÇÃO DO BUG AQUI: Convertendo para int() nativo
-                    excluir_meta(
-                        user_id, 
-                        str(dados_edit['categoria']), 
-                        int(dados_edit['mes']), 
-                        int(dados_edit['ano'])
-                    )
+                    excluir_meta(user_id, str(dados_edit['categoria']), int(dados_edit['mes']), int(dados_edit['ano']))
                     st.success("Meta excluída!")
                     st.rerun()
 
         st.divider()
+        st.subheader(f"{'✏️ Editando' if modo_edicao else '➕ Nova'} Meta {tipo_periodo.capitalize()}")
 
-        # Formulário Unificado
+        # --- CORREÇÃO: Radio fora do st.form para reatividade ---
+        # Determina o valor inicial
+        idx_tipo = 0
+        if modo_edicao and dados_edit['categoria'] in LISTA_CATEGORIAS_INVESTIMENTO:
+            idx_tipo = 1
+            
+        tipo_lancamento = st.radio(
+            "Tipo de Meta", 
+            ["Despesa", "Reserva/Investimento"], 
+            index=idx_tipo,
+            horizontal=True,
+            key=f"radio_tipo_{tipo_periodo}"
+        )
+        
+        # Define a lista correta baseada no radio (agora atualiza na hora!)
+        lista_cats = LISTA_CATEGORIAS_DESPESA if tipo_lancamento == "Despesa" else LISTA_CATEGORIAS_INVESTIMENTO
+
+        # Formulário para os demais campos
         with st.form(f"form_meta_{tipo_periodo}"):
-            st.subheader(f"{'✏️ Editando' if modo_edicao else '➕ Nova'} Meta {tipo_periodo.capitalize()}")
+            c_cat, c_data, c_val = st.columns([2, 1, 1])
             
-            c1, c2, c3 = st.columns(3)
-            
-            # Campo 1: Categoria e Tipo
-            tipo_lancamento = c1.radio("Tipo", ["Despesa", "Reserva/Investimento"], 
-                                     index=0 if not modo_edicao or dados_edit['categoria'] in LISTA_CATEGORIAS_DESPESA else 1)
-            
-            lista_cats = LISTA_CATEGORIAS_DESPESA if tipo_lancamento == "Despesa" else LISTA_CATEGORIAS_INVESTIMENTO
-            
-            # Tenta encontrar o index da categoria atual
-            try:
-                idx_cat = lista_cats.index(dados_edit['categoria']) if modo_edicao and dados_edit['categoria'] in lista_cats else 0
-            except:
-                idx_cat = 0
+            # Recupera índice da categoria se estiver editando e a categoria existir na lista atual
+            idx_cat = 0
+            if modo_edicao and dados_edit['categoria'] in lista_cats:
+                idx_cat = lista_cats.index(dados_edit['categoria'])
 
-            cat_selecionada = c1.selectbox("Categoria", options=lista_cats, index=idx_cat)
+            with c_cat:
+                cat_selecionada = st.selectbox("Categoria", options=lista_cats, index=idx_cat)
 
-            # Campo 2: Data (Mês/Ano)
-            if is_anual:
-                val_ano = int(dados_edit['ano']) if modo_edicao else date.today().year
-                ano_form = c2.number_input("Ano de Referência", min_value=2023, max_value=2030, value=val_ano)
-                mes_form = 0 # 0 representa Anual no banco
-            else:
-                val_mes = int(dados_edit['mes']) if modo_edicao else date.today().month
-                val_ano = int(dados_edit['ano']) if modo_edicao else date.today().year
-                
-                mes_form = c2.selectbox("Mês", range(1, 13), index=val_mes-1)
-                ano_form = c3.number_input("Ano", min_value=2023, max_value=2030, value=val_ano)
+            with c_data:
+                if is_anual:
+                    val_ano = int(dados_edit['ano']) if modo_edicao else date.today().year
+                    ano_form = st.number_input("Ano", min_value=2023, max_value=2030, value=val_ano)
+                    mes_form = 0
+                else:
+                    val_mes = int(dados_edit['mes']) if modo_edicao else date.today().month
+                    val_ano = int(dados_edit['ano']) if modo_edicao else date.today().year
+                    mes_form = st.selectbox("Mês", range(1, 13), index=val_mes-1)
+                    # Hackzinho para passar ano para variavel acessivel
+                    st.write("") # Espaço visual se precisar, ou coloque o ano em outra coluna se preferir
+            
+            # Se for mensal, coloca o Ano numa coluna extra ou ajusta layout. 
+            # Para simplificar aqui, vou adicionar o ano abaixo do mês se for mensal
+            if not is_anual:
+                ano_form = st.number_input("Ano", min_value=2023, max_value=2030, value=val_ano)
 
-            # Campo 3: Valor
-            val_meta = float(dados_edit['valor_meta']) if modo_edicao else 0.0
-            valor_meta = st.number_input("Valor da Meta (R$)", min_value=0.0, value=val_meta, step=50.0)
+            with c_val:
+                val_meta = float(dados_edit['valor_meta']) if modo_edicao else 0.0
+                valor_meta = st.number_input("Valor (R$)", min_value=0.0, value=val_meta, step=50.0)
 
             submitted = st.form_submit_button("💾 Salvar Meta")
             
             if submitted:
                 if valor_meta > 0:
-                    # Se estiver editando, tecnicamente precisaríamos deletar a antiga se a chave (cat/mes/ano) mudou, 
-                    # mas o 'salvar_meta' geralmente faz um INSERT ou UPDATE. 
-                    # Como simplificação, se mudou a chave primária, excluímos a anterior.
                     if modo_edicao:
-                        # Verifica se mudou a chave composta
                         mudou_chave = (dados_edit['categoria'] != cat_selecionada) or \
                                       (int(dados_edit['mes']) != mes_form) or \
                                       (int(dados_edit['ano']) != ano_form)
-                        
                         if mudou_chave:
                              excluir_meta(user_id, str(dados_edit['categoria']), int(dados_edit['mes']), int(dados_edit['ano']))
                     
-                    # Salva (se já existir com mesma chave, seu database deve fazer update, senão insert)
                     salvar_meta(user_id, cat_selecionada, valor_meta, mes_form, ano_form)
-                    st.success(f"Meta de {cat_selecionada} salva com sucesso!")
+                    st.success(f"Meta de {cat_selecionada} salva!")
                     st.rerun()
                 else:
-                    st.warning("O valor deve ser maior que zero.")
+                    st.warning("Valor inválido.")
 
     # ===================================================
-    # ABA 2: METAS MENSAIS
+    # RENDERIZAÇÃO DAS ABAS
     # ===================================================
     with tab_mensal:
         renderizar_gerenciador_metas("mensal")
 
-    # ===================================================
-    # ABA 3: METAS ANUAIS
-    # ===================================================
     with tab_anual:
-        st.info("ℹ️ Metas anuais são úteis para grandes objetivos (ex: Viagem de fim de ano, IPVA, Reserva Total).")
+        st.info("ℹ️ Metas anuais servem para grandes objetivos ou teto de gastos anual.")
         renderizar_gerenciador_metas("anual")
