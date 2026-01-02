@@ -119,6 +119,23 @@ else:
             st.rerun()
             
         st.divider()
+
+        if st.session_state['user_name'] == 'admin': 
+            from modules.database import contar_usuarios_ativos
+            
+            st.divider()
+            st.caption("🔒 Área do Admin")
+            qtd_ativos = contar_usuarios_ativos()
+            
+            # Mostra o número com um indicador visual
+            st.metric(
+                label="Usuários Logados", 
+                value=qtd_ativos, 
+                delta=None,
+                help="Quantidade de usuários com sessão válida no momento."
+            )
+
+        st.divider()
         
         # --- EXIBIR NOTIFICAÇÕES (VOCÊ FEZ CORRETO) ---
         notifications.exibir_notificacoes_na_sidebar(st.session_state['user_id'])
