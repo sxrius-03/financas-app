@@ -257,20 +257,6 @@ def verificar_login(username, password):
             return {"id": user_id, "name": name, "username": username}
     return None
 
-def contar_usuarios_ativos():
-    """Conta quantos usuários únicos têm uma sessão válida (não expirada)."""
-    conn = get_connection()
-    c = conn.cursor()
-    try:
-        # Conta IDs únicos na tabela de sessões onde a data de expiração é futura
-        c.execute("SELECT COUNT(DISTINCT user_id) FROM sessions WHERE expires_at > NOW()")
-        resultado = c.fetchone()
-        return resultado[0] if resultado else 0
-    except:
-        return 0
-    finally:
-        conn.close()
-
 # --- LANÇAMENTOS (CAIXA) ---
 
 def salvar_lancamento(user_id, dados: dict):
