@@ -31,10 +31,18 @@ CONFIG_UI = {
         "msg_sucesso": "Lançamento salvo com sucesso!"
     },
     "TABELA": {
+        # Configuração completa dos nomes das colunas
         "col_selecao": "✅",
+        "col_id": "ID",
         "col_data": "📅 Data",
+        "col_tipo": "Tipo",
+        "col_cat": "📂 Categoria",
+        "col_sub": "Subcategoria",
+        "col_desc": "📝 Descrição",
         "col_valor": "💲 Valor (R$)",
-        "col_desc": "Descrição", 
+        "col_conta": "🏦 Conta",
+        "col_forma": "💳 Forma Pagto",
+        "col_status": "Status",
         "help_selecao": "Selecione para excluir em massa"
     },
     "FILTROS": {
@@ -238,14 +246,22 @@ def show_lancamentos():
                     help=CONFIG_UI["TABELA"]["help_selecao"], 
                     default=False
                 ),
+                "id": st.column_config.NumberColumn(CONFIG_UI["TABELA"]["col_id"]),
                 "data": st.column_config.DateColumn(
                     CONFIG_UI["TABELA"]["col_data"], 
                     format="DD/MM/YYYY"
                 ),
+                "tipo": st.column_config.TextColumn(CONFIG_UI["TABELA"]["col_tipo"]),
+                "categoria": st.column_config.TextColumn(CONFIG_UI["TABELA"]["col_cat"]),
+                "subcategoria": st.column_config.TextColumn(CONFIG_UI["TABELA"]["col_sub"]),
+                "descricao": st.column_config.TextColumn(CONFIG_UI["TABELA"]["col_desc"]),
                 "valor": st.column_config.NumberColumn(
                     CONFIG_UI["TABELA"]["col_valor"], 
                     format="R$ %.2f"
                 ),
+                "conta": st.column_config.TextColumn(CONFIG_UI["TABELA"]["col_conta"]),
+                "forma_pagamento": st.column_config.TextColumn(CONFIG_UI["TABELA"]["col_forma"]),
+                "status": st.column_config.TextColumn(CONFIG_UI["TABELA"]["col_status"]),
                 # Ocultando colunas auxiliares
                 "Ano": None, "Mes": None, "Dia": None, "user_id": None 
             }

@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
+from dateutil.relativedelta import relativedelta
 from modules.database import (
     salvar_cartao, carregar_cartoes, excluir_cartao, 
     salvar_compra_credito, carregar_fatura, atualizar_item_fatura,
@@ -27,7 +28,6 @@ CONFIG_UI = {
         "kpi_total": "Total da Fatura"
     },
     "TABELA_FATURA": {
-        # Nomes das colunas da tabela de faturas
         "col_data": "📅 Data Compra",
         "col_desc": "📝 Descrição",
         "col_parc": "🔢 Parc.",
@@ -57,8 +57,9 @@ CONFIG_UI = {
 
 # --- CORES (SISTEMA HSL) ---
 CORES = {
-    "status_pago": "hsl(140, 100%, 30%)", # Verde Escuro
-    "status_aberto": "hsl(40, 100%, 50%)", # Amarelo/Laranja
+    "status_pago": "hsl(140, 100%, 40%)",   # Verde
+    "status_aberto": "hsl(200, 100%, 50%)", # Azul
+    "status_fechado": "hsl(30, 100%, 50%)", # Laranja (Pendente)
     "status_atrasado": "hsl(0, 100%, 60%)", # Vermelho
     "card_bg": "hsl(220, 13%, 18%)",
     "texto_destaque": "hsl(0, 0%, 100%)"
@@ -88,8 +89,11 @@ def show_cartoes():
             c1, c2 = st.columns(2)
             cartao_selecionado = c1.selectbox(CONFIG_UI["FATURAS"]["lbl_selecao"], df_cartoes['nome_cartao'].tolist())
             
-            # ID do cartão
-            id_cartao = int(df_cartoes[df_cartoes['nome_cartao'] == cartao_selecionado]['id'].values[0])
+            # Dados do cartão selecionado
+            info_cartao = df_cartoes[df_cartoes['nome_cartao'] == cartao_selecionado].iloc[0]
+            id_cartao = int(info_cartao['id'])
+            dia_venc = int(info_cartao['dia_vencimento'])
+            dia_fech = int(info_cartao['dia_fechamento'])
             
             # --- FILTRO DINÂMICO DE MESES ---
             meses_disponiveis = listar_meses_fatura(user_id, id_cartao)
@@ -97,11 +101,9 @@ def show_cartoes():
             if not meses_disponiveis:
                 st.info(CONFIG_UI["FATURAS"]["msg_sem_meses"])
             else:
-                # Tenta pré-selecionar o mês atual ou o próximo
                 mes_atual = date.today().replace(day=1)
                 idx_padrao = 0
                 for i, m in enumerate(meses_disponiveis):
-                    # Se achar o mês atual na lista
                     if m.year == mes_atual.year and m.month == mes_atual.month:
                         idx_padrao = i
                         break
@@ -113,7 +115,7 @@ def show_cartoes():
                     index=idx_padrao
                 )
                 
-                # Carregar Itens
+                # Carregar Itens e Status
                 df_fatura = carregar_fatura(user_id, id_cartao, mes_escolhido)
                 status_info = obter_status_fatura(user_id, id_cartao, mes_escolhido)
                 
@@ -124,30 +126,65 @@ def show_cartoes():
                 else:
                     total_fatura = float(df_fatura['valor_parcela'].sum())
                     
+                    # --- LÓGICA DE STATUS REFINADA ---
+                    # 1. Calcula Data Real de Vencimento
+                    try: 
+                        dt_vencimento = date(mes_escolhido.year, mes_escolhido.month, dia_venc)
+                    except ValueError: 
+                        # Caso dia 31 em mês de 30 dias, joga para o último dia
+                        dt_vencimento = date(mes_escolhido.year, mes_escolhido.month, 1) + relativedelta(months=1) - timedelta(days=1)
+
+                    # 2. Calcula Data Real de Fechamento
+                    # Lógica: Se fecha dia 8 e vence dia 15, fecha no mesmo mês.
+                    # Se fecha dia 25 e vence dia 5, fecha no mês anterior.
+                    if dia_fech < dia_venc:
+                        dt_fechamento = date(mes_escolhido.year, mes_escolhido.month, dia_fech)
+                    else:
+                        dt_fechamento = dt_vencimento - relativedelta(months=1)
+                        # Ajusta o dia
+                        try:
+                            dt_fechamento = dt_fechamento.replace(day=dia_fech)
+                        except ValueError:
+                            dt_fechamento = (dt_fechamento + relativedelta(months=1)).replace(day=1) - timedelta(days=1)
+
+                    hoje = date.today()
+                    esta_paga = status_info and status_info['status'] in ['Paga', 'Paga Externo']
+                    
+                    # Definição Visual do Status
+                    if esta_paga:
+                        txt_status = "✅ PAGA"
+                        cor_status = CORES['status_pago']
+                    elif hoje < dt_fechamento:
+                        txt_status = "📅 ABERTA"
+                        cor_status = CORES['status_aberto']
+                    elif dt_fechamento <= hoje <= dt_vencimento:
+                        txt_status = "⚠️ FECHADA"
+                        cor_status = CORES['status_fechado'] # Laranja
+                    else:
+                        txt_status = "🔥 ATRASADA"
+                        cor_status = CORES['status_atrasado']
+
                     # KPI
                     col_kpi1, col_kpi2, col_kpi3 = st.columns([2, 2, 3])
                     col_kpi1.metric(CONFIG_UI["FATURAS"]["kpi_total"], f"R$ {total_fatura:,.2f}")
+                    col_kpi2.markdown(f"<h3 style='color:{cor_status}'>{txt_status}</h3>", unsafe_allow_html=True)
                     
-                    esta_paga = status_info and status_info['status'] in ['Paga', 'Paga Externo']
-                    
-                    if esta_paga:
-                        col_kpi2.markdown(f"<h3 style='color:{CORES['status_pago']}'>✅ PAGA</h3>", unsafe_allow_html=True)
-                        if status_info['data']:
-                            data_pg = datetime.strptime(str(status_info['data']), "%Y-%m-%d").strftime("%d/%m/%Y")
-                            col_kpi3.caption(f"Pago em: {data_pg} | Valor: R$ {status_info['valor']:,.2f}")
-                        
-                        if col_kpi3.button("🔓 Reabrir Fatura", type="secondary"):
-                            excluir_pagamento_fatura(user_id, id_cartao, mes_escolhido)
-                            st.rerun()
-                    else:
-                        if mes_escolhido < date.today():
-                            col_kpi2.markdown(f"<h3 style='color:{CORES['status_atrasado']}'>⚠️ ATRASADA</h3>", unsafe_allow_html=True)
+                    # Ações de Pagamento
+                    with col_kpi3:
+                        if esta_paga:
+                            if status_info['data']:
+                                data_pg = datetime.strptime(str(status_info['data']), "%Y-%m-%d").strftime("%d/%m/%Y")
+                                st.caption(f"Pago em: {data_pg} | Valor: R$ {status_info['valor']:,.2f}")
+                            if st.button("🔓 Reabrir Fatura", type="secondary"):
+                                excluir_pagamento_fatura(user_id, id_cartao, mes_escolhido)
+                                st.rerun()
                         else:
-                            col_kpi2.markdown(f"<h3 style='color:{CORES['status_aberto']}'>📅 ABERTA</h3>", unsafe_allow_html=True)
-                        
-                        with col_kpi3:
+                            # Se não estiver paga, mostra as opções
                             with st.expander("💸 Pagar Fatura"):
-                                if st.button("Lançar Pagamento no Caixa"):
+                                c_pay1, c_pay2 = st.columns(2)
+                                
+                                # Opção 1: Lançar no Caixa (Oficial)
+                                if c_pay1.button("Lançar no Caixa", help="Cria uma despesa no extrato e baixa a fatura."):
                                     dados_lanc = {
                                         "data": date.today(), "tipo": "Despesa", "categoria": "Financeiro",
                                         "subcategoria": "Pagamento de Fatura",
@@ -157,10 +194,16 @@ def show_cartoes():
                                     }
                                     salvar_lancamento(user_id, dados_lanc)
                                     registrar_pagamento_fatura(user_id, id_cartao, mes_escolhido, "Paga", total_fatura, date.today())
-                                    st.success("Pago!")
+                                    st.success("Pago e Lançado!")
+                                    st.rerun()
+                                
+                                # Opção 2: Baixar sem lançar (Externo)
+                                if c_pay2.button("Já Paguei por Fora", help="Apenas marca como paga, sem mexer no saldo."):
+                                    registrar_pagamento_fatura(user_id, id_cartao, mes_escolhido, "Paga Externo", total_fatura, date.today())
+                                    st.success("Fatura baixada manualmente!")
                                     st.rerun()
 
-                    # Tabela (Com nomes customizados do Painel)
+                    # Tabela
                     st.dataframe(
                         df_fatura[['data_compra', 'descricao', 'parcela_numero', 'qtd_parcelas', 'valor_parcela']], 
                         use_container_width=True,
@@ -174,7 +217,7 @@ def show_cartoes():
                         hide_index=True
                     )
                     
-                    # Edição Rápida de Item
+                    # Edição Rápida
                     with st.expander("✏️ Corrigir Item Específico"):
                         opcoes_item = df_fatura.apply(lambda r: f"Item {r['id']} | {r['descricao']} - R$ {r['valor_parcela']:.2f}", axis=1)
                         item_sel = st.selectbox("Selecione:", ["Selecione..."] + list(opcoes_item))
@@ -217,7 +260,6 @@ def show_cartoes():
         st.subheader(CONFIG_UI["HISTORICO"]["header"])
         st.caption(CONFIG_UI["HISTORICO"]["caption"])
         
-        # Filtro opcional por cartão
         if not df_cartoes.empty:
             filtro_card = st.selectbox("Filtrar por Cartão:", ["Todos"] + df_cartoes['nome_cartao'].tolist())
             id_card_filter = None
@@ -229,7 +271,6 @@ def show_cartoes():
             if df_hist.empty:
                 st.info("Nenhuma compra encontrada.")
             else:
-                # Seletor de Compra para Edição
                 opcoes_compra = df_hist.apply(
                     lambda r: f"{r['data_compra']} | {r['descricao']} | R$ {r['valor_total']:.2f} ({r['qtd_parcelas']}x) - {r['nome_cartao']}", 
                     axis=1
@@ -237,8 +278,6 @@ def show_cartoes():
                 compra_sel = st.selectbox("Selecione uma compra para editar/excluir:", ["Selecione..."] + list(opcoes_compra))
                 
                 if compra_sel != "Selecione...":
-                    # Recupera dados originais
-                    # O index do selectbox corresponde ao index do dataframe (se a lista for gerada na ordem)
                     idx_sel = list(opcoes_compra).index(compra_sel)
                     dados_compra = df_hist.iloc[idx_sel]
                     
@@ -265,10 +304,7 @@ def show_cartoes():
                             st.rerun()
                         
                         if atualizar:
-                            # 1. Exclui a antiga
                             excluir_compra_agrupada(user_id, int(dados_compra['cartao_id']), dados_compra['data_compra'], dados_compra['descricao'], int(dados_compra['qtd_parcelas']))
-                            # 2. Cria a nova
-                            # Precisa buscar info do cartão para saber dia fechamento
                             info_cartao = df_cartoes[df_cartoes['id'] == dados_compra['cartao_id']].iloc[0]
                             salvar_compra_credito(
                                 user_id, int(dados_compra['cartao_id']), 
@@ -279,7 +315,7 @@ def show_cartoes():
                             st.rerun()
 
     # ===================================================
-    # ABA 4: GERENCIAR CARTÕES (EDITAR E CRIAR)
+    # ABA 4: GERENCIAR CARTÕES
     # ===================================================
     with tab_gerenciar:
         opcoes_ger = ["✨ Cadastrar Novo"]
@@ -311,7 +347,6 @@ def show_cartoes():
                     atualizar_cartao(user_id, int(dados_card['id']), nome_c, fech_c, venc_c)
                     st.success("Cartão atualizado!")
                     st.rerun()
-                
                 if col_d.form_submit_button(CONFIG_UI["GERENCIAR"]["btn_del"], type="secondary"):
                     excluir_cartao(user_id, int(dados_card['id']))
                     st.success("Cartão excluído!")
