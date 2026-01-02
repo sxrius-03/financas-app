@@ -365,8 +365,7 @@ def carregar_metas(user_id, mes=None, ano=None):
     sql = "SELECT * FROM metas WHERE user_id = %s"
     params = [user_id]
     
-    # CORREÇÃO IMPORTANTE: Use 'is not None' para que mes=0 (meta anual) funcione
-    if mes is not None and ano is not None:
+    if mes and ano:
         sql += " AND mes = %s AND ano = %s"
         params.extend([mes, ano])
         
@@ -377,8 +376,7 @@ def carregar_metas(user_id, mes=None, ano=None):
 def excluir_meta(user_id, categoria, mes, ano):
     conn = get_connection()
     c = conn.cursor()
-    # CORREÇÃO IMPORTANTE: Trocado 'category' por 'categoria'
-    c.execute("DELETE FROM metas WHERE categoria=%s AND user_id=%s AND mes=%s AND ano=%s", (categoria, user_id, mes, ano))
+    c.execute("DELETE FROM metas WHERE category=%s AND user_id=%s AND mes=%s AND ano=%s", (categoria, user_id, mes, ano))
     conn.commit()
     conn.close()
     clear_cache()
@@ -472,6 +470,70 @@ def atualizar_item_fatura(user_id, id_item, nova_descricao, novo_valor, nova_dat
     conn.commit()
     conn.close()
     clear_cache()
+
+# --- FUNÇÕES PARA UI_CARTOES.PY ATUALIZADO ---
+
+def listar_meses_fatura(user_id, cartao_id):
+    """Retorna apenas os meses que possuem faturas geradas."""
+    conn = get_connection()
+    sql = "SELECT DISTINCT mes_fatura FROM lancamentos_cartao WHERE user_id=%s AND cartao_id=%s ORDER BY mes_fatura DESC"
+    df = pd.read_sql_query(sql, conn, params=(user_id, cartao_id))
+    conn.close()
+    if not df.empty:
+        # Garante que é data
+        return pd.to_datetime(df['mes_fatura']).dt.date.tolist()
+    return []
+
+def atualizar_cartao(user_id, cartao_id, nome, fechamento, vencimento):
+    """Atualiza dados cadastrais do cartão."""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("UPDATE cartoes_credito SET nome_cartao=%s, dia_fechamento=%s, dia_vencimento=%s WHERE id=%s AND user_id=%s", (nome, fechamento, vencimento, cartao_id, user_id))
+    conn.commit()
+    conn.close()
+    clear_cache()
+
+def buscar_historico_compras(user_id, cartao_id=None):
+    """
+    Agrupa parcelas para mostrar como 'Compras' únicas no histórico.
+    """
+    conn = get_connection()
+    sql = """
+        SELECT 
+            MIN(lc.id) as id_referencia,
+            lc.cartao_id,
+            cc.nome_cartao,
+            lc.data_compra,
+            lc.descricao,
+            lc.categoria,
+            lc.qtd_parcelas,
+            SUM(lc.valor_parcela) as valor_total
+        FROM lancamentos_cartao lc
+        JOIN cartoes_credito cc ON lc.cartao_id = cc.id
+        WHERE lc.user_id = %s
+    """
+    params = [user_id]
+    if cartao_id:
+        sql += " AND lc.cartao_id = %s"
+        params.append(cartao_id)
+    
+    sql += " GROUP BY lc.cartao_id, cc.nome_cartao, lc.data_compra, lc.descricao, lc.categoria, lc.qtd_parcelas ORDER BY lc.data_compra DESC"
+    
+    df = pd.read_sql_query(sql, conn, params=tuple(params))
+    conn.close()
+    return df
+
+def excluir_compra_agrupada(user_id, cartao_id, data_compra, descricao, qtd_parcelas):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("""
+        DELETE FROM lancamentos_cartao 
+        WHERE user_id=%s AND cartao_id=%s AND data_compra=%s AND descricao=%s AND qtd_parcelas=%s
+    """, (user_id, cartao_id, data_compra, descricao, qtd_parcelas))
+    conn.commit()
+    conn.close()
+    clear_cache()
+
 
 # --- CONTROLE DE PAGAMENTO DE FATURAS ---
 
@@ -627,6 +689,57 @@ def salvar_transacao_reserva(user_id, res_id, data, tipo, valor, desc):
         c.execute("UPDATE reservas SET saldo_atual = saldo_atual - %s WHERE id=%s", (valor, res_id))
         
     conn.commit()
+    conn.close()
+    clear_cache()
+
+# --- NOVAS FUNÇÕES PARA EDIÇÃO DE TRANSAÇÕES DE RESERVA ---
+
+def excluir_transacao_reserva(user_id, id_transacao):
+    conn = get_connection()
+    c = conn.cursor()
+    # 1. Busca info para reverter saldo
+    c.execute("SELECT reserva_id, tipo, valor FROM reserva_transacoes WHERE id=%s AND user_id=%s", (id_transacao, user_id))
+    row = c.fetchone()
+    if row:
+        res_id, tipo, valor = row
+        # Reverte o impacto no saldo
+        if tipo in ['Aporte', 'Rendimento']:
+            c.execute("UPDATE reservas SET saldo_atual = saldo_atual - %s WHERE id=%s", (valor, res_id))
+        elif tipo == 'Resgate':
+            c.execute("UPDATE reservas SET saldo_atual = saldo_atual + %s WHERE id=%s", (valor, res_id))
+        
+        # Apaga o registro
+        c.execute("DELETE FROM reserva_transacoes WHERE id=%s", (id_transacao,))
+        conn.commit()
+    conn.close()
+    clear_cache()
+
+def atualizar_transacao_reserva(user_id, id_transacao, nova_data, nova_desc, novo_valor):
+    conn = get_connection()
+    c = conn.cursor()
+    
+    # 1. Busca dados antigos
+    c.execute("SELECT reserva_id, tipo, valor FROM reserva_transacoes WHERE id=%s AND user_id=%s", (id_transacao, user_id))
+    row = c.fetchone()
+    if row:
+        res_id, tipo, valor_antigo = row
+        
+        # 2. Reverte efeito antigo no saldo
+        if tipo in ['Aporte', 'Rendimento']:
+            c.execute("UPDATE reservas SET saldo_atual = saldo_atual - %s WHERE id=%s", (valor_antigo, res_id))
+        elif tipo == 'Resgate':
+            c.execute("UPDATE reservas SET saldo_atual = saldo_atual + %s WHERE id=%s", (valor_antigo, res_id))
+            
+        # 3. Atualiza a transação
+        c.execute("UPDATE reserva_transacoes SET data=%s, descricao=%s, valor=%s WHERE id=%s", (nova_data, nova_desc, novo_valor, id_transacao))
+        
+        # 4. Aplica efeito novo no saldo
+        if tipo in ['Aporte', 'Rendimento']:
+            c.execute("UPDATE reservas SET saldo_atual = saldo_atual + %s WHERE id=%s", (novo_valor, res_id))
+        elif tipo == 'Resgate':
+            c.execute("UPDATE reservas SET saldo_atual = saldo_atual - %s WHERE id=%s", (novo_valor, res_id))
+            
+        conn.commit()
     conn.close()
     clear_cache()
 

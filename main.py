@@ -5,7 +5,7 @@ from modules.database import init_db, criar_usuario, verificar_login, criar_sess
 import modules.ui_lancamentos as ui_lancamentos
 import modules.ui_dashboard as ui_dashboard
 import modules.ui_investimentos as ui_investimentos
-import modules.ui_orcamento as ui_orcamento
+import modules.ui_metasgasto as ui_metasgasto
 import time
 import modules.ui_cartoes as ui_cartoes
 import modules.ui_despesas_fixas as ui_despesas_fixas
@@ -15,6 +15,7 @@ import modules.ui_reserva as ui_reserva
 import modules.ui_despesas_fixas as ui_despesas_fixas
 import modules.ui_projecao as ui_projecao
 import modules.ui_receitas_fixas as ui_receitas_fixas
+import modules.ui_metasgasto as ui_metasgasto
 
 # 1. Configuração da Página
 st.set_page_config(page_title="Sistema Financeiro", page_icon="💰", layout="wide")
@@ -126,7 +127,7 @@ else:
         selected = option_menu(
             menu_title="Menu Principal",
             # --- CORREÇÃO AQUI: ADICIONEI "Reserva" ---
-            options=["Dashboard", "Lançamentos", "Receitas Fixas","Despesas Fixas", "Projeção", "Cartões", "Investimentos", "Reserva", "Orçamento", "Ferramentas"],
+            options=["Dashboard", "Lançamentos", "Receitas Fixas","Despesas Fixas", "Projeção", "Cartões", "Investimentos", "Reserva", "Metas de Gasto", "Ferramentas"],
             # --- CORREÇÃO AQUI: ADICIONEI ÍCONE "safe" ou "shield-lock" ---
             icons=["graph-up-arrow", "pencil-square", "cash-stack", "calendar-x", "activity", "credit-card", "bank", "safe", "calculator", "arrow-repeat", "tools"],
             menu_icon="cast",
@@ -146,8 +147,8 @@ else:
         ui_dashboard.show_dashboard()
     elif selected == "Investimentos":
         ui_investimentos.show_investimentos()
-    elif selected == "Orçamento":
-        ui_orcamento.show_orcamento()
+    elif selected == "Metas de Gasto":
+        ui_metasgasto.show_orcamento()
     elif selected == "Cartões":
         ui_cartoes.show_cartoes()
     elif selected == "Ferramentas":

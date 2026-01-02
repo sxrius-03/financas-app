@@ -9,21 +9,66 @@ from modules.database import (
     buscar_metas_saldo_restante, carregar_metas
 )
 
+# ==============================================================================
+# 🎛️ PAINEL DE CONTROLE (CONFIGURAÇÕES DE UI & DESIGN)
+# ==============================================================================
+
+CONFIG_UI = {
+    "GERAL": {
+        "titulo": "🔮 Saldo Projetado (Fluxo de Caixa)",
+        "caption": "Esta ferramenta simula o futuro da sua conta bancária cruzando: Saldo Atual + Contas Fixas + Faturas + Metas de Orçamento.",
+        "config_label": "⚙️ Configurar Simulação",
+        "lbl_meses": "Projetar até quantos meses?",
+        "lbl_metas": "Simular gasto total das Metas?",
+        "help_metas": "Se marcado, o sistema reserva o dinheiro das suas metas (Lazer, Mercado, etc) como se fosse uma conta obrigatória. É o cenário mais seguro."
+    },
+    "METRICAS": {
+        "saldo_inicial": "Saldo Inicial (Hoje)",
+        "pior_saldo": "Pior Saldo Previsto",
+        "saldo_final": "Saldo em {} meses"
+    },
+    "MENSAGENS": {
+        "risco": "🚨 **Risco de Quebra:** Seu saldo deve ficar negativo no dia **{}**. Considere reduzir suas Metas ou cortar Despesas Fixas.",
+        "seguro": "✅ **Saúde Financeira:** Pelas projeções, você não ficará no vermelho no período, mesmo gastando todo o orçamento das metas.",
+        "sem_dados": "Sem dados suficientes para projetar."
+    },
+    "TABELA": {
+        "titulo_expander": "🔎 Ver Detalhes dia a dia",
+        # AQUI VOCÊ MUDA O NOME DAS COLUNAS
+        "col_data": "📅 Data",
+        "col_saldo": "💰 Saldo Final (R$)",
+        "col_entrada": "🟢 Entradas",
+        "col_saida": "🔴 Saídas",
+        "col_desc": "📝 Descrição do Movimento"
+    }
+}
+
+# --- CORES (SISTEMA HSL) ---
+CORES = {
+    "positivo": "hsl(140, 100%, 50%)", # Verde Primavera (#00FF7F)
+    "negativo": "hsl(0, 100%, 65%)",   # Vermelho Suave (#FF4B4B)
+    "linha_zero": "hsl(0, 0%, 100%)",  # Branco
+    "texto_padrao": "hsl(0, 0%, 90%)"
+}
+
+# ==============================================================================
+# 🛠️ LÓGICA DE PROJEÇÃO
+# ==============================================================================
+
 def show_projecao():
     if 'user_id' not in st.session_state: return
     user_id = st.session_state['user_id']
 
-    st.header("🔮 Saldo Projetado (Fluxo de Caixa)")
-    st.caption("Esta ferramenta simula o futuro da sua conta bancária cruzando: Saldo Atual + Contas Fixas + Faturas + Metas de Orçamento.")
+    st.header(CONFIG_UI["GERAL"]["titulo"])
+    st.caption(CONFIG_UI["GERAL"]["caption"])
 
     # --- CONFIGURAÇÃO ---
-    with st.expander("⚙️ Configurar Simulação", expanded=True):
+    with st.expander(CONFIG_UI["GERAL"]["config_label"], expanded=True):
         col1, col2 = st.columns(2)
-        meses_proj = col1.slider("Projetar até quantos meses?", 1, 12, 6)
-        usar_metas = col2.checkbox("Simular gasto total das Metas?", value=True, 
-                                   help="Se marcado, o sistema reserva o dinheiro das suas metas (Lazer, Mercado, etc) como se fosse uma conta obrigatória. É o cenário mais seguro.")
+        meses_proj = col1.slider(CONFIG_UI["GERAL"]["lbl_meses"], 1, 12, 6)
+        usar_metas = col2.checkbox(CONFIG_UI["GERAL"]["lbl_metas"], value=True, help=CONFIG_UI["GERAL"]["help_metas"])
 
-    # --- CARGA DE DADOS (CACHEADA PELO DATABASE.PY) ---
+    # --- CARGA DE DADOS (CACHEADA) ---
     saldo_atual = calcular_saldo_atual(user_id)
     df_fixas = carregar_recorrencias(user_id)
     df_faturas = buscar_faturas_futuras(user_id)
@@ -46,7 +91,6 @@ def show_projecao():
 
         # 1. Recorrências (Despesas Fixas / Receitas Fixas)
         if not df_fixas.empty:
-            # Filtra o que vence neste dia
             recs_do_dia = df_fixas[df_fixas['dia_vencimento'] == dia]
             for _, row in recs_do_dia.iterrows():
                 val = float(row['valor'])
@@ -59,8 +103,6 @@ def show_projecao():
 
         # 2. Faturas de Cartão
         if not df_faturas.empty:
-            # Filtra faturas que vencem neste mês/ano e neste dia
-            # O banco retorna 'mes_fatura' como data (ex: 2025-02-01)
             for _, fat in df_faturas.iterrows():
                 dt_fat = pd.to_datetime(fat['mes_fatura']).date()
                 dia_venc_card = int(fat['dia_vencimento'])
@@ -70,11 +112,9 @@ def show_projecao():
                     saidas += val_fat
                     detalhes.append(f"Fatura Cartão: R$ {val_fat:.2f}")
 
-        # 3. Provisão de Metas (Lógica do Breno)
-        # Aplicamos no ÚLTIMO dia do mês
+        # 3. Provisão de Metas
         _, ultimo_dia = calendar.monthrange(ano, mes)
         if usar_metas and dia == ultimo_dia:
-            # Se for o mês atual: desconta apenas o que FALTA gastar
             if mes == date.today().month and ano == date.today().year:
                 df_rest = buscar_metas_saldo_restante(user_id, mes, ano)
                 if not df_rest.empty:
@@ -82,10 +122,7 @@ def show_projecao():
                     if soma_restante > 0:
                         saidas += soma_restante
                         detalhes.append(f"Provisão Metas (Restante Mês): R$ {soma_restante:.2f}")
-            
-            # Se for mês futuro: desconta a meta CHEIA (assumindo que vai gastar tudo)
             elif data_cursor > date.today():
-                # Busca metas cadastradas para aquele mês futuro
                 df_metas_futuras = carregar_metas(user_id, mes, ano)
                 if not df_metas_futuras.empty:
                     soma_metas = df_metas_futuras['valor_meta'].sum()
@@ -96,7 +133,7 @@ def show_projecao():
         # Atualiza Saldo
         saldo_corrente = saldo_corrente + entradas - saidas
         
-        # Só registra no gráfico se houve movimento ou se é hoje/fim
+        # Registra na timeline
         if entradas != 0 or saidas != 0 or data_cursor == date.today() or data_cursor == data_fim:
             timeline.append({
                 "Data": data_cursor,
@@ -112,7 +149,7 @@ def show_projecao():
 
     # --- VISUALIZAÇÃO ---
     if df_proj.empty:
-        st.warning("Sem dados suficientes para projetar.")
+        st.warning(CONFIG_UI["MENSAGENS"]["sem_dados"])
         return
 
     min_saldo = df_proj['Saldo'].min()
@@ -120,44 +157,47 @@ def show_projecao():
     
     # KPIs
     k1, k2, k3 = st.columns(3)
-    k1.metric("Saldo Inicial (Hoje)", f"R$ {saldo_atual:,.2f}")
+    k1.metric(CONFIG_UI["METRICAS"]["saldo_inicial"], f"R$ {saldo_atual:,.2f}")
     
     delta_color = "normal" if min_saldo > 0 else "inverse"
-    k2.metric("Pior Saldo Previsto", f"R$ {min_saldo:,.2f}", f"em {data_min}", delta_color=delta_color)
+    k2.metric(CONFIG_UI["METRICAS"]["pior_saldo"], f"R$ {min_saldo:,.2f}", f"em {data_min}", delta_color=delta_color)
     
     saldo_final = df_proj.iloc[-1]['Saldo']
-    k3.metric(f"Saldo em {meses_proj} meses", f"R$ {saldo_final:,.2f}")
+    k3.metric(CONFIG_UI["METRICAS"]["saldo_final"].format(meses_proj), f"R$ {saldo_final:,.2f}")
 
     if min_saldo < 0:
-        st.error(f"🚨 **Risco de Quebra:** Seu saldo deve ficar negativo no dia **{data_min}**. Considere reduzir suas Metas ou cortar Despesas Fixas.")
+        st.error(CONFIG_UI["MENSAGENS"]["risco"].format(data_min))
     else:
-        st.success("✅ **Saúde Financeira:** Pelas projeções, você não ficará no vermelho no período, mesmo gastando todo o orçamento das metas.")
+        st.success(CONFIG_UI["MENSAGENS"]["seguro"])
 
     # Gráfico Interativo
     fig = go.Figure()
     
+    cor_linha = CORES["positivo"] if min_saldo >= 0 else CORES["negativo"]
+    
     fig.add_trace(go.Scatter(
         x=df_proj['Data'], y=df_proj['Saldo'],
         mode='lines+markers', name='Saldo Projetado',
-        line=dict(color='#00FF7F' if min_saldo >= 0 else '#FF4B4B', width=3),
+        line=dict(color=cor_linha, width=3),
         hovertemplate='%{x|%d/%m/%Y}<br>Saldo: R$ %{y:.2f}'
     ))
     
     # Linha Zero
-    fig.add_hline(y=0, line_dash="dash", line_color="white", annotation_text="Zero")
+    fig.add_hline(y=0, line_dash="dash", line_color=CORES["linha_zero"], annotation_text="Zero")
 
     fig.update_layout(title="Evolução do Saldo", template="plotly_dark", height=450)
     st.plotly_chart(fig, use_container_width=True)
 
-    # Tabela Drill-down
-    with st.expander("🔎 Ver Detalhes dia a dia"):
+    # Tabela Drill-down (Configurável)
+    with st.expander(CONFIG_UI["TABELA"]["titulo_expander"]):
         st.dataframe(
             df_proj[df_proj['Descricao'] != ""],
             column_config={
-                "Data": st.column_config.DateColumn("Data", format="DD/MM/YYYY"),
-                "Saldo": st.column_config.NumberColumn("Saldo Final", format="R$ %.2f"),
-                "Entrada": st.column_config.NumberColumn("Entradas", format="R$ %.2f"),
-                "Saida": st.column_config.NumberColumn("Saídas", format="R$ %.2f"),
+                "Data": st.column_config.DateColumn(CONFIG_UI["TABELA"]["col_data"], format="DD/MM/YYYY"),
+                "Saldo": st.column_config.NumberColumn(CONFIG_UI["TABELA"]["col_saldo"], format="R$ %.2f"),
+                "Entrada": st.column_config.NumberColumn(CONFIG_UI["TABELA"]["col_entrada"], format="R$ %.2f"),
+                "Saida": st.column_config.NumberColumn(CONFIG_UI["TABELA"]["col_saida"], format="R$ %.2f"),
+                "Descricao": st.column_config.TextColumn(CONFIG_UI["TABELA"]["col_desc"]),
             },
             use_container_width=True,
             hide_index=True
