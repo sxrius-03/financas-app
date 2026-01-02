@@ -12,7 +12,7 @@ from modules.database import carregar_dados, carregar_reservas
 # --- TEXTOS E LABELS ---
 CONFIG_TXT = {
     "titulo_pag": "📊 Dashboard Financeiro",
-    "titulo_evolucao": "Fluxo de Caixa (Curva de Tendência)",
+    "titulo_evolucao": "Evolução Receita/Despesa",
     "msg_vazio": "Sem dados para exibir neste período.",
     "tooltip_receita": "Entradas",
     "tooltip_despesa": "Saídas"
