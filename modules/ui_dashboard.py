@@ -18,7 +18,7 @@ CONFIG_UI = {
     "VISAO_TOTAL": {
         "titulo_grafico": "Evolução do Fluxo de Caixa",
         "eixo_x": "Período",
-        "eixo_y": "Valor (R$)",
+        "eixo_y": "R$",
         "tooltip_receita": "Entradas",
         "tooltip_despesa": "Saídas"
     },
@@ -32,7 +32,7 @@ CONFIG_UI = {
         "titulo_barras": "Movimentação Diária",
         "titulo_pizza": "Detalhamento por Categoria",
         "label_eixo_x": "Dia do Mês",
-        "label_eixo_y": "Volume (R$)"
+        "label_eixo_y": "R$"
     },
     "TABELA": {
         "col_data": "📅 Data",
