@@ -31,11 +31,10 @@ CONFIG_UI = {
         "msg_sucesso": "Lançamento salvo com sucesso!"
     },
     "TABELA": {
-        # Configure aqui os nomes das colunas que aparecem na tabela de edição
         "col_selecao": "✅",
         "col_data": "📅 Data",
         "col_valor": "💲 Valor (R$)",
-        "col_desc": "Descrição", # Usado na visualização mobile/resumo
+        "col_desc": "Descrição", 
         "help_selecao": "Selecione para excluir em massa"
     },
     "FILTROS": {
@@ -58,8 +57,34 @@ CORES = {
 }
 
 # ==============================================================================
-# 🛠️ FUNÇÕES LÓGICAS
+# 🛠️ FUNÇÕES LÓGICAS E DE ESTILO
 # ==============================================================================
+
+def aplicar_estilo_editor(df):
+    """
+    Aplica estilo visual ao DataFrame para uso no data_editor.
+    Pinta a coluna 'valor' de Verde (Receita) ou Vermelho (Despesa).
+    """
+    def colorir_valor(row):
+        # Define cores baseadas no tipo
+        cor_fundo = CORES['receita'] if row['tipo'] == 'Receita' else CORES['despesa']
+        cor_texto = "white"
+        
+        # Array de estilos vazio (padrão)
+        estilos = [''] * len(row)
+        
+        # Aplica estilo apenas na coluna 'valor' se ela existir
+        if 'valor' in row.index:
+            idx = row.index.get_loc('valor')
+            # Fundo colorido, texto branco, negrito e centralizado
+            estilos[idx] = f'background-color: {cor_fundo}; color: {cor_texto}; font-weight: bold; border-radius: 5px; text-align: center;'
+        
+        return estilos
+
+    # Cria o Styler
+    # .set_properties centraliza o texto de todas as células
+    styler = df.style.set_properties(**{'text-align': 'center'}).apply(colorir_valor, axis=1)
+    return styler
 
 def show_lancamentos():
     if 'user_id' not in st.session_state:
@@ -203,6 +228,9 @@ def show_lancamentos():
             # Adiciona coluna de seleção
             df_filtro.insert(0, "Selecionar", False)
             
+            # Aplica o estilo (Cores de Receita/Despesa na coluna Valor)
+            styler_tabela = aplicar_estilo_editor(df_filtro)
+            
             # Configuração das colunas usando o Painel de Controle
             column_config = {
                 "Selecionar": st.column_config.CheckboxColumn(
@@ -224,7 +252,7 @@ def show_lancamentos():
             
             # Tabela editável
             df_editado = st.data_editor(
-                df_filtro,
+                styler_tabela, # Usando o DF Estilizado
                 column_config=column_config,
                 hide_index=True,
                 use_container_width=True,
