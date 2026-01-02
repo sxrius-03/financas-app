@@ -24,7 +24,7 @@ LISTA_CATEGORIAS_INVESTIMENTO = [
     "Reserva de Emergência", 
     "Investimentos", 
     "Aposentadoria", 
-    "Caixinha", 
+    "Caixinha/Cofre", 
     "Poupança",
     "Aportes"
 ]
