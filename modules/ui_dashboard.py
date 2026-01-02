@@ -125,7 +125,7 @@ def aplicar_estilo_tabela(df):
         # Encontra o índice da coluna 'valor'
         if 'valor' in row.index:
             idx = row.index.get_loc('valor')
-            estilos[idx] = f'background-color: {cor_fundo}; color: {cor_texto}; font-weight: bold; border-radius: 5px;'
+            estilos[idx] = f'background-color: {cor_fundo}; color: {cor_texto}; font-weight: bold; border-radius: 5px; text-align: center;'
             
         return estilos
 
@@ -152,7 +152,7 @@ def aplicar_estilo_tabela(df):
     # O Styler precisa trabalhar com os nomes originais antes de renomear no visual, 
     # mas o Streamlit aplica o Styler.
     
-    styler = df_final.style.apply(colorir_linhas, axis=1)
+    styler = df_final.style.set_properties(**{'text-align': 'center'}).apply(colorir_linhas, axis=1)
     
     # Formatação de string para o Styler (caso o column_config falhe em cima do styler)
     styler.format({'valor': "R$ {:,.2f}", 'data': "{:%d/%m/%Y}"})
