@@ -164,9 +164,6 @@ def aplicar_estilo_tabela(df):
     # Aqui vamos retornar o DF e usar column_config do Streamlit para formatação de texto, 
     # e Pandas Styler para Cor.
     
-    # O Styler precisa trabalhar com os nomes originais antes de renomear no visual, 
-    # mas o Streamlit aplica o Styler.
-    
     styler = df_final.style.set_properties(**{'text-align': 'center'}).apply(colorir_linhas, axis=1)
     
     # Formatação de string para o Styler (caso o column_config falhe em cima do styler)
@@ -316,7 +313,7 @@ def show_dashboard():
                 else:
                     st.info("Sem despesas registradas.")
 
-# ===================================================
+    # ===================================================
     # ABA 3: VISÃO MENSAL (COM FILTRO DINÂMICO)
     # ===================================================
     with tab_mensal:
@@ -356,89 +353,92 @@ def show_dashboard():
                 # Pega o último da lista (assumindo que sorted asc coloca Dezembro no fim)
                 idx_padrao = len(opcoes_meses) - 1 if opcoes_meses else 0
             
-            sel_mes_nome = c_filt2.selectbox("Mês", opcoes_meses, index=idx_padrao, key="sb_mes_mes")
-            
-            # 3. Recupera o número do mês baseado no nome escolhido
-            # (Busca reversa no dicionário: Valor -> Chave)
-            sel_mes_num = [k for k, v in mapa_meses.items() if v == sel_mes_nome][0]
-            
-            # Filtra o DataFrame final
-            df_mes = df[(df['Ano'] == sel_ano_m) & (df['Mes'] == sel_mes_num)]
-            
-            if df_mes.empty:
-                # Teoricamente nunca vai entrar aqui com o filtro dinâmico, mas por segurança:
-                st.warning(CONFIG_UI['GERAL']['msg_vazio'])
+            # Se não houver meses (caso raro, filtro vazio), evita erro no selectbox
+            if not opcoes_meses:
+                 st.warning("Nenhum dado encontrado para o ano selecionado.")
             else:
-            rec_m = df_mes[df_mes['tipo'] == 'Receita']['valor'].sum()
-            desp_m = df_mes[df_mes['tipo'] == 'Despesa']['valor'].sum()
-            saldo_m = rec_m - desp_m
-            
-            m1, m2, m3 = st.columns(3)
-            m1.metric("Receita Mensal", f"R$ {rec_m:,.2f}")
-            m2.metric("Despesa Mensal", f"R$ {desp_m:,.2f}")
-            m3.metric("Saldo Mensal", f"R$ {saldo_m:,.2f}")
-            st.divider()
-            
-            gm1, gm2 = st.columns(2)
-            
-            # --- GRÁFICO DIÁRIO ---
-            with gm1:
-                df_dias = df_mes.groupby(['Dia', 'tipo'])['valor'].sum().reset_index()
-                fig_bar_dia = px.bar(
-                    df_dias, x='Dia', y='valor', color='tipo', barmode='group',
-                    title=f"{CONFIG_UI['VISAO_MENSAL']['titulo_barras']} - {sel_mes_nome}",
-                    color_discrete_map=MAPA_CORES_PLOTLY, template="plotly_dark"
-                )
-                fig_bar_dia.update_traces(hovertemplate='Dia %{x}<br><b>%{data.name}</b>: R$ %{y:,.2f}<extra></extra>')
-                fig_bar_dia.update_layout(
-                    paper_bgcolor=CORES["fundo_transparente"], plot_bgcolor=CORES["fundo_transparente"],
-                    xaxis_title=CONFIG_UI['VISAO_MENSAL']['label_eixo_x'],
-                    yaxis_title=CONFIG_UI['VISAO_MENSAL']['label_eixo_y'],
-                    legend=dict(title=None, orientation="h")
-                )
-                st.plotly_chart(fig_bar_dia, use_container_width=True)
-
-            # --- PIZZA MENSAL ---
-            with gm2:
-                df_pizza_mes = preparar_dados_pizza_detalhada(df_mes, 'Despesa')
-                if not df_pizza_mes.empty:
-                    # GERA LISTA DE CORES
-                    lista_cores_m = [CORES_CATEGORIAS.get(cat, "hsl(0, 0%, 50%)") for cat in df_pizza_mes['categoria']]
-
-                    fig_pie_m = go.Figure(data=[go.Pie(
-                        labels=df_pizza_mes['categoria'],
-                        values=df_pizza_mes['valor'],
-                        hole=0.4,
-                        customdata=df_pizza_mes['info_extra'],
-                        hovertemplate="<b>%{label}</b><br>R$ %{value:,.2f} (%{percent})<br><br><b>Detalhes:</b><br>%{customdata}<extra></extra>",
-                        
-                        # AQUI ESTA A MUDANÇA
-                        marker=dict(colors=lista_cores_m)
-                    )])
-                    fig_pie_m.update_layout(
-                        title=f"{CONFIG_UI['VISAO_MENSAL']['titulo_pizza']} - {sel_mes_nome}",
-                        template="plotly_dark", paper_bgcolor=CORES["fundo_transparente"]
-                    )
-                    st.plotly_chart(fig_pie_m, use_container_width=True)
+                sel_mes_nome = c_filt2.selectbox("Mês", opcoes_meses, index=idx_padrao, key="sb_mes_mes")
+                
+                # 3. Recupera o número do mês baseado no nome escolhido
+                # (Busca reversa no dicionário: Valor -> Chave)
+                sel_mes_num = [k for k, v in mapa_meses.items() if v == sel_mes_nome][0]
+                
+                # Filtra o DataFrame final
+                df_mes = df[(df['Ano'] == sel_ano_m) & (df['Mes'] == sel_mes_num)]
+                
+                if df_mes.empty:
+                    st.warning(CONFIG_UI['GERAL']['msg_vazio'])
                 else:
-                    st.info("Sem despesas.")
-            
-            st.markdown("### 📋 Lançamentos Detalhados")
-            
-            # --- TABELA ESTILIZADA ---
-            # Prepara o Styler (Cores) e o Mapa de Nomes
-            styler_tabela, mapa_nomes = aplicar_estilo_tabela(df_mes)
-            
-            st.dataframe(
-                styler_tabela,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "data": st.column_config.DateColumn(mapa_nomes['data'], format="DD/MM/YYYY"),
-                    "tipo": st.column_config.TextColumn(mapa_nomes['tipo']),
-                    "categoria": st.column_config.TextColumn(mapa_nomes['categoria']),
-                    "descricao": st.column_config.TextColumn(mapa_nomes['descricao']),
-                    "conta": st.column_config.TextColumn(mapa_nomes['conta']),
-                    "valor": st.column_config.NumberColumn(mapa_nomes['valor'], format="R$ %.2f")
-                }
-            )
+                    rec_m = df_mes[df_mes['tipo'] == 'Receita']['valor'].sum()
+                    desp_m = df_mes[df_mes['tipo'] == 'Despesa']['valor'].sum()
+                    saldo_m = rec_m - desp_m
+                    
+                    m1, m2, m3 = st.columns(3)
+                    m1.metric("Receita Mensal", f"R$ {rec_m:,.2f}")
+                    m2.metric("Despesa Mensal", f"R$ {desp_m:,.2f}")
+                    m3.metric("Saldo Mensal", f"R$ {saldo_m:,.2f}")
+                    st.divider()
+                    
+                    gm1, gm2 = st.columns(2)
+                    
+                    # --- GRÁFICO DIÁRIO ---
+                    with gm1:
+                        df_dias = df_mes.groupby(['Dia', 'tipo'])['valor'].sum().reset_index()
+                        fig_bar_dia = px.bar(
+                            df_dias, x='Dia', y='valor', color='tipo', barmode='group',
+                            title=f"{CONFIG_UI['VISAO_MENSAL']['titulo_barras']} - {sel_mes_nome}",
+                            color_discrete_map=MAPA_CORES_PLOTLY, template="plotly_dark"
+                        )
+                        fig_bar_dia.update_traces(hovertemplate='Dia %{x}<br><b>%{data.name}</b>: R$ %{y:,.2f}<extra></extra>')
+                        fig_bar_dia.update_layout(
+                            paper_bgcolor=CORES["fundo_transparente"], plot_bgcolor=CORES["fundo_transparente"],
+                            xaxis_title=CONFIG_UI['VISAO_MENSAL']['label_eixo_x'],
+                            yaxis_title=CONFIG_UI['VISAO_MENSAL']['label_eixo_y'],
+                            legend=dict(title=None, orientation="h")
+                        )
+                        st.plotly_chart(fig_bar_dia, use_container_width=True)
+
+                    # --- PIZZA MENSAL ---
+                    with gm2:
+                        df_pizza_mes = preparar_dados_pizza_detalhada(df_mes, 'Despesa')
+                        if not df_pizza_mes.empty:
+                            # GERA LISTA DE CORES
+                            lista_cores_m = [CORES_CATEGORIAS.get(cat, "hsl(0, 0%, 50%)") for cat in df_pizza_mes['categoria']]
+
+                            fig_pie_m = go.Figure(data=[go.Pie(
+                                labels=df_pizza_mes['categoria'],
+                                values=df_pizza_mes['valor'],
+                                hole=0.4,
+                                customdata=df_pizza_mes['info_extra'],
+                                hovertemplate="<b>%{label}</b><br>R$ %{value:,.2f} (%{percent})<br><br><b>Detalhes:</b><br>%{customdata}<extra></extra>",
+                                
+                                # AQUI ESTA A MUDANÇA
+                                marker=dict(colors=lista_cores_m)
+                            )])
+                            fig_pie_m.update_layout(
+                                title=f"{CONFIG_UI['VISAO_MENSAL']['titulo_pizza']} - {sel_mes_nome}",
+                                template="plotly_dark", paper_bgcolor=CORES["fundo_transparente"]
+                            )
+                            st.plotly_chart(fig_pie_m, use_container_width=True)
+                        else:
+                            st.info("Sem despesas.")
+                    
+                    st.markdown("### 📋 Lançamentos Detalhados")
+                    
+                    # --- TABELA ESTILIZADA ---
+                    # Prepara o Styler (Cores) e o Mapa de Nomes
+                    styler_tabela, mapa_nomes = aplicar_estilo_tabela(df_mes)
+                    
+                    st.dataframe(
+                        styler_tabela,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "data": st.column_config.DateColumn(mapa_nomes['data'], format="DD/MM/YYYY"),
+                            "tipo": st.column_config.TextColumn(mapa_nomes['tipo']),
+                            "categoria": st.column_config.TextColumn(mapa_nomes['categoria']),
+                            "descricao": st.column_config.TextColumn(mapa_nomes['descricao']),
+                            "conta": st.column_config.TextColumn(mapa_nomes['conta']),
+                            "valor": st.column_config.NumberColumn(mapa_nomes['valor'], format="R$ %.2f")
+                        }
+                    )
