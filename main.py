@@ -120,7 +120,7 @@ else:
             
         st.divider()
 
-        if st.session_state['user_name'] == 'admin': 
+        if st.session_state['user_name'] == 'Eduardo': 
             from modules.database import contar_usuarios_ativos
             
             st.divider()
