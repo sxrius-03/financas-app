@@ -287,21 +287,24 @@ def show_dashboard():
                 )
                 st.plotly_chart(fig_bar, use_container_width=True)
             
-            # --- GRÁFICO DE PIZZA (Com Detalhes) ---
+            # --- GRÁFICO DE PIZZA (Com Detalhes e Cores Customizadas) ---
             with g2:
-                # Prepara dados com HTML de subcategorias
                 df_pizza = preparar_dados_pizza_detalhada(df_ano, 'Despesa')
                 
                 if not df_pizza.empty:
+                    # GERA LISTA DE CORES NA ORDEM DOS DADOS
+                    # Se a categoria não estiver no dicionário, usa cinza (hsl(0,0,50%))
+                    lista_cores = [CORES_CATEGORIAS.get(cat, "hsl(0, 0%, 50%)") for cat in df_pizza['categoria']]
+
                     fig_pie = go.Figure(data=[go.Pie(
                         labels=df_pizza['categoria'],
                         values=df_pizza['valor'],
                         hole=0.4,
-                        # Adiciona a info extra nos dados customizados
                         customdata=df_pizza['info_extra'],
-                        # Tooltip: Categoria, Valor, Porcentagem E a lista de subcategorias
                         hovertemplate="<b>%{label}</b><br>Total: R$ %{value:,.2f} (%{percent})<br><br><b>Top Detalhes:</b><br>%{customdata}<extra></extra>",
-                        marker=dict(colors=px.colors.sequential.RdBu) # Ou use uma paleta fixa
+                        
+                        # AQUI ESTA A MUDANÇA: Usamos a lista_cores criada acima
+                        marker=dict(colors=lista_cores) 
                     )])
                     
                     fig_pie.update_layout(
@@ -362,13 +365,18 @@ def show_dashboard():
             with gm2:
                 df_pizza_mes = preparar_dados_pizza_detalhada(df_mes, 'Despesa')
                 if not df_pizza_mes.empty:
+                    # GERA LISTA DE CORES
+                    lista_cores_m = [CORES_CATEGORIAS.get(cat, "hsl(0, 0%, 50%)") for cat in df_pizza_mes['categoria']]
+
                     fig_pie_m = go.Figure(data=[go.Pie(
                         labels=df_pizza_mes['categoria'],
                         values=df_pizza_mes['valor'],
                         hole=0.4,
                         customdata=df_pizza_mes['info_extra'],
                         hovertemplate="<b>%{label}</b><br>R$ %{value:,.2f} (%{percent})<br><br><b>Detalhes:</b><br>%{customdata}<extra></extra>",
-                        marker=dict(colors=px.colors.sequential.RdBu)
+                        
+                        # AQUI ESTA A MUDANÇA
+                        marker=dict(colors=lista_cores_m)
                     )])
                     fig_pie_m.update_layout(
                         title=f"{CONFIG_UI['VISAO_MENSAL']['titulo_pizza']} - {sel_mes_nome}",
