@@ -49,8 +49,8 @@ CORES = {
     # Cores Semânticas (Usadas nos Gráficos e Tabela)
     "receita": "hsl(154, 65%, 55%)",    # Verde
     "receita_bg": "hsla(154, 65%, 55%, 0.2)", # Verde Transparente (Fundo Tabela)
-    "despesa": "hsl(6, 100%, 65%)",      # Vermelho
-    "despesa_bg": "hsla(6, 100%, 65%, 0.2)", # Vermelho Transparente (Fundo Tabela)
+    "despesa": "hsl(0, 87%, 50%)",      # Vermelho
+    "despesa_bg": "hsla(0, 73%, 59%, 0.2)", # Vermelho Transparente (Fundo Tabela)
     "saldo_pos": "hsl(154, 65%, 55%)",
     "saldo_neg": "hsl(6, 85%, 60%)",
     
@@ -59,6 +59,21 @@ CORES = {
     "texto_branco": "hsl(0, 0%, 100%)",
     "fundo_transparente": "rgba(0,0,0,0)",
     "grid_color": "hsl(220, 10%, 20%)"
+}
+
+# Mapeamento manual de cores por categoria
+CORES_CATEGORIAS = {
+    "Moradia": "hsl(238, 70%, 57%)",      
+    "Alimentação": "hsl(255, 73%, 59%)",   
+    "Transporte": "hsl(131, 73%, 59%)",     
+    "Lazer": "hsl(39, 87%, 32%)",        
+    "Educação": "hsl(24, 43%, 77%)",     
+    "Tecnologia": "hsl(0, 0%, 77%)",   
+    "Saúde": "hsl(0, 0%, 23%)",        
+    "Pessoal": "hsl(275, 57%, 68%)",       
+    "Financeiro": "hsl(9, 87%, 50%)",      
+    "Igreja": "hsl(9, 73%, 23%)",        
+    "Outros": "hsl(108, 31%, 94%)"           
 }
 
 # Mapa de Cores para Plotly
