@@ -23,7 +23,7 @@ CONFIG_TXT = {
 CORES = {
     # Cores Semânticas
     "receita": "hsl(154, 65%, 55%)",    # Verde Menta Vibrante (era #00CC96)
-    "despesa": "hsl(6, 85%, 60%)",      # Vermelho Coral (era #EF553B)
+    "despesa": "hsl(6, 100%, 60%)",      # Vermelho Coral (era #EF553B)
     "saldo_pos": "hsl(154, 65%, 55%)",
     "saldo_neg": "hsl(6, 85%, 60%)",
     
