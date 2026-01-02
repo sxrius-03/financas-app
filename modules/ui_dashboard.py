@@ -39,7 +39,7 @@ CONFIG_UI = {
         "col_tipo": "Tipo",
         "col_cat": "📂 Categoria",
         "col_desc": "📝 Descrição",
-        "col_conta": "banco/Conta",
+        "col_conta": "Conta",
         "col_valor": "💲 Valor"
     }
 }
