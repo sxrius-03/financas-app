@@ -8,3 +8,4 @@ bcrypt
 sqlalchemy
 extra-streamlit-components
 uuid
+streamlit-aggrid
