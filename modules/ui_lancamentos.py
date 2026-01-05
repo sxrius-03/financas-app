@@ -4,11 +4,11 @@ from datetime import datetime
 from modules.database import salvar_lancamento, carregar_dados, excluir_lancamento, atualizar_lancamento
 from modules.constants import CATEGORIAS
 
-# Tenta importar o AgGrid (com tratamento de erro amigável)
+# Tenta importar o AgGrid
 try:
     from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode, JsCode
 except ImportError:
-    st.error("⚠️ Biblioteca 'streamlit-aggrid' não detectada. Por favor, adicione ao requirements.txt.")
+    st.error("⚠️ Biblioteca 'streamlit-aggrid' não detectada.")
     st.stop()
 
 # ==============================================================================
@@ -21,10 +21,10 @@ CONFIG_UI = {
         "titulo_aba_gerenciar": "📊 Editor Avançado (AgGrid)",
     },
     "TABELA": {
-        # Nomes das colunas para exibição
         "data": "📅 Data",
         "tipo": "Tipo",
-        "hierarquia": "📂 Categoria Completa (Tipo > Cat > Sub)",
+        "categoria": "📂 Categoria",
+        "subcategoria": "🗂️ Subcategoria",
         "descricao": "📝 Descrição",
         "valor": "💲 Valor (R$)",
         "conta": "🏦 Conta",
@@ -34,19 +34,25 @@ CONFIG_UI = {
     }
 }
 
-# Listas Auxiliares
+# --- LISTAS PARA DROPDOWNS ---
 LISTA_CONTAS = ["Nubank", "Sicredi", "Sicoob", "BNDES", "Banco do Brasil", "Bradesco", "Itaú", "Santander", "Caixa", "Inter", "C6 Bank", "Investimento", "Carteira", "Vale Alimentação", "Conta Principal"]
 LISTA_FORMAS = ["PIX", "Transferência", "Cartão de Débito", "Boleto", "Dinheiro", "Cheque", "Vale Alimentação", "Depósito", "Boleto/Automático"]
 LISTA_STATUS = ["Pago/Recebido", "Pendente", "Agendado"]
+LISTA_TIPOS = ["Receita", "Despesa"]
 
-# Gerador de Lista Hierárquica (Resolve a confusão visual)
-# Cria strings como: "Despesa > Moradia > Aluguel"
-LISTA_HIERARQUICA = []
+# --- GERAR LISTAS DE CATEGORIAS E SUBCATEGORIAS (FLAT) ---
+# Extrai todas as categorias e subcategorias únicas do dicionário CATEGORIAS
+todas_categorias = set()
+todas_subcategorias = set()
+
 for tipo, cats in CATEGORIAS.items():
     for cat, subs in cats.items():
+        todas_categorias.add(cat)
         for sub in subs:
-            LISTA_HIERARQUICA.append(f"{tipo} > {cat} > {sub}")
-LISTA_HIERARQUICA.sort()
+            todas_subcategorias.add(sub)
+
+LISTA_CATEGORIAS = sorted(list(todas_categorias))
+LISTA_SUBCATEGORIAS = sorted(list(todas_subcategorias))
 
 # ==============================================================================
 # 🛠️ FUNÇÕES
@@ -62,7 +68,7 @@ def show_lancamentos():
     ])
 
     # ===================================================
-    # ABA 1: ADICIONAR NOVO (MANTIDO IGUAL)
+    # ABA 1: ADICIONAR NOVO (PADRÃO)
     # ===================================================
     with tab_novo:
         st.header("📝 Registrar Movimentação")
@@ -72,10 +78,12 @@ def show_lancamentos():
         tipo = col2.selectbox("Tipo", list(CATEGORIAS.keys()))
         
         col3, col4 = st.columns(2)
-        cats = list(CATEGORIAS[tipo].keys())
-        categoria = col3.selectbox("Categoria", cats)
-        subs = CATEGORIAS[tipo][categoria]
-        subcategoria = col4.selectbox("Subcategoria", subs)
+        # Aqui os dropdowns são dinâmicos (um depende do outro) pois é Streamlit nativo
+        cats_disponiveis = list(CATEGORIAS[tipo].keys())
+        categoria = col3.selectbox("Categoria", cats_disponiveis)
+        
+        subs_disponiveis = CATEGORIAS[tipo][categoria]
+        subcategoria = col4.selectbox("Subcategoria", subs_disponiveis)
         
         descricao = st.text_input("Descrição", placeholder="Ex: Mercado Semanal")
         
@@ -95,10 +103,10 @@ def show_lancamentos():
             st.success("Lançamento salvo!")
 
     # ===================================================
-    # ABA 2: GERENCIAR COM AG-GRID
+    # ABA 2: GERENCIAR COM AG-GRID (3 COLUNAS)
     # ===================================================
     with tab_gerenciar:
-        st.caption("💡 Dica: Clique na célula para editar. Use a coluna da direita para selecionar itens para exclusão.")
+        st.caption("💡 Edite clicando nas células. Use a caixa de seleção à esquerda para excluir.")
         
         df = carregar_dados(user_id)
         
@@ -106,59 +114,61 @@ def show_lancamentos():
             st.info("Sem dados.")
             return
 
-        # 1. Preparação dos Dados (Criar coluna hierárquica para facilitar edição)
+        # 1. Preparação
         df['data'] = pd.to_datetime(df['data']).dt.strftime('%Y-%m-%d')
-        # Cria a coluna combinada para o dropdown inteligente
-        df['hierarquia'] = df.apply(lambda x: f"{x['tipo']} > {x['categoria']} > {x['subcategoria']}", axis=1)
         
-        # Seleciona colunas úteis
-        cols = ['id', 'data', 'hierarquia', 'descricao', 'valor', 'conta', 'forma_pagamento', 'status']
+        # Seleciona colunas na ordem desejada
+        cols = ['id', 'data', 'tipo', 'categoria', 'subcategoria', 'descricao', 'valor', 'conta', 'forma_pagamento', 'status']
         df_grid = df[cols].copy()
 
         # 2. Configuração do AgGrid
         gb = GridOptionsBuilder.from_dataframe(df_grid)
         
-        # Configurações Globais
         gb.configure_default_column(
-            editable=True, 
-            resizable=True, 
-            filterable=True, 
-            sortable=True,
-            minWidth=100
+            editable=True, resizable=True, filterable=True, sortable=True, minWidth=100
         )
         
-        # Coluna ID (Oculta ou travada)
         gb.configure_column("id", hide=True)
         
-        # Coluna Data
-        gb.configure_column(
-            "data", 
-            headerName=CONFIG_UI["TABELA"]["data"],
-            cellEditor="agDateStringCellEditor",
-            width=120
-        )
+        gb.configure_column("data", headerName=CONFIG_UI["TABELA"]["data"], cellEditor="agDateStringCellEditor", width=110)
         
-        # Coluna Hierarquia (O PULO DO GATO 🐱)
-        # Dropdown único que resolve Tipo/Cat/Sub
+        # --- AS 3 COLUNAS DE CATEGORIZAÇÃO ---
         gb.configure_column(
-            "hierarquia",
-            headerName=CONFIG_UI["TABELA"]["hierarquia"],
-            cellEditor="agSelectCellEditor",
-            cellEditorParams={"values": LISTA_HIERARQUICA},
-            width=300
+            "tipo", 
+            headerName=CONFIG_UI["TABELA"]["tipo"], 
+            cellEditor="agSelectCellEditor", 
+            cellEditorParams={"values": LISTA_TIPOS},
+            width=100
         )
+        gb.configure_column(
+            "categoria", 
+            headerName=CONFIG_UI["TABELA"]["categoria"], 
+            cellEditor="agSelectCellEditor", 
+            cellEditorParams={"values": LISTA_CATEGORIAS},
+            width=150
+        )
+        gb.configure_column(
+            "subcategoria", 
+            headerName=CONFIG_UI["TABELA"]["subcategoria"], 
+            cellEditor="agSelectCellEditor", 
+            cellEditorParams={"values": LISTA_SUBCATEGORIAS},
+            width=150
+        )
+        # -------------------------------------
+
+        gb.configure_column("descricao", headerName=CONFIG_UI["TABELA"]["descricao"], width=200)
         
-        # Outras Colunas com Dropdowns
-        gb.configure_column("descricao", headerName=CONFIG_UI["TABELA"]["descricao"], width=250)
         gb.configure_column(
             "valor", 
             headerName=CONFIG_UI["TABELA"]["valor"], 
             type=["numericColumn", "numberColumnFilter"], 
             valueFormatter="x.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})",
-            width=130
+            width=120
         )
-        gb.configure_column("conta", headerName=CONFIG_UI["TABELA"]["conta"], cellEditor="agSelectCellEditor", cellEditorParams={"values": LISTA_CONTAS})
-        gb.configure_column("forma_pagamento", headerName=CONFIG_UI["TABELA"]["forma_pagamento"], cellEditor="agSelectCellEditor", cellEditorParams={"values": LISTA_FORMAS})
+        
+        gb.configure_column("conta", headerName=CONFIG_UI["TABELA"]["conta"], cellEditor="agSelectCellEditor", cellEditorParams={"values": LISTA_CONTAS}, width=130)
+        gb.configure_column("forma_pagamento", headerName=CONFIG_UI["TABELA"]["forma_pagamento"], cellEditor="agSelectCellEditor", cellEditorParams={"values": LISTA_FORMAS}, width=140)
+        
         gb.configure_column(
             "status", 
             headerName=CONFIG_UI["TABELA"]["status"], 
@@ -170,19 +180,16 @@ def show_lancamentos():
                     if (params.value == 'Atrasado') { return {'color': '#FF4B4B'}; }
                     return null;
                 }
-            """)
+            """),
+            width=130
         )
 
-        # Configuração de Seleção (Para Excluir)
         gb.configure_selection(selection_mode="multiple", use_checkbox=True)
-        
-        # Paginação (Opcional, remove se quiser scroll infinito)
         gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=20)
         
         gridOptions = gb.build()
 
-        # 3. Renderiza a Grid
-        # key='grid1' é importante para manter o estado
+        # 3. Renderiza
         grid_response = AgGrid(
             df_grid,
             gridOptions=gridOptions,
@@ -190,25 +197,19 @@ def show_lancamentos():
             data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
             fit_columns_on_grid_load=False,
             height=500,
-            allow_unsafe_jscode=True, # Necessário para o formatador de moeda e cores
-            theme="streamlit", # Tema dark nativo
-            key='grid_lancamentos'
+            allow_unsafe_jscode=True,
+            theme="streamlit",
+            key='grid_lancamentos_v2'
         )
 
-        # 4. Lógica de Atualização e Exclusão
-        
-        # Botões de Ação Fora da Grid (Mais seguro e performático que botão na linha)
+        # 4. Ações
         c_del, c_save = st.columns([1, 4])
         
         with c_del:
-            # Pega as linhas selecionadas pelo checkbox
             selected_rows = grid_response.get('selected_rows')
-            
-            # --- CORREÇÃO DO BUG AQUI ---
-            # Verifica se não é None antes de checar o len()
+            # CORREÇÃO DO ERRO NoneType
             if selected_rows is not None and len(selected_rows) > 0:
-                if st.button(f"🗑️ Excluir {len(selected_rows)} Selecionados", type="primary"):
-                    # Como selected_rows pode vir como DataFrame ou Lista de Dicts dependendo da versão
+                if st.button(f"🗑️ Excluir {len(selected_rows)} Itens", type="primary"):
                     if isinstance(selected_rows, pd.DataFrame):
                         ids_to_delete = selected_rows['id'].tolist()
                     else:
@@ -217,45 +218,28 @@ def show_lancamentos():
                     for pid in ids_to_delete:
                         excluir_lancamento(user_id, int(pid))
                     
-                    st.success("Itens excluídos!")
+                    st.success("Excluído!")
                     st.rerun()
         
         with c_save:
-            # Detecta edições comparando com o original
-            # O grid_response['data'] contém o estado atual da tabela visual
             df_edited = grid_response['data']
             
             if df_edited is not None and not df_edited.empty:
                 if st.button("💾 Salvar Alterações da Tabela"):
                     count_updates = 0
                     
-                    # Itera sobre o DF editado
-                    # Nota: df_edited é um DataFrame pandas
                     for index, row in df_edited.iterrows():
-                        # Recupera o original para comparar
                         id_row = int(row['id'])
+                        # Busca original para comparar
                         original = df[df['id'] == id_row]
                         
                         if not original.empty:
                             orig = original.iloc[0]
                             
-                            # Reconstrói Tipo/Cat/Sub da string hierárquica
-                            # Formato: "Tipo > Categoria > Sub"
-                            try:
-                                parts = row['hierarquia'].split(" > ")
-                                if len(parts) == 3:
-                                    new_tipo, new_cat, new_sub = parts[0], parts[1], parts[2]
-                                else:
-                                    # Fallback se algo der errado na string
-                                    new_tipo, new_cat, new_sub = orig['tipo'], orig['categoria'], orig['subcategoria']
-                            except:
-                                new_tipo, new_cat, new_sub = orig['tipo'], orig['categoria'], orig['subcategoria']
-
-                            # Checa mudanças
-                            # Convertemos para string/float garantindo compatibilidade
                             val_novo = float(row['valor'])
                             val_orig = float(orig['valor'])
                             
+                            # Compara mudanças (agora com as 3 colunas separadas)
                             mudou = (
                                 str(row['descricao']) != str(orig['descricao']) or
                                 abs(val_novo - val_orig) > 0.001 or
@@ -263,16 +247,17 @@ def show_lancamentos():
                                 str(row['conta']) != str(orig['conta']) or
                                 str(row['status']) != str(orig['status']) or
                                 str(row['forma_pagamento']) != str(orig['forma_pagamento']) or
-                                str(new_cat) != str(orig['categoria']) or
-                                str(new_sub) != str(orig['subcategoria'])
+                                str(row['tipo']) != str(orig['tipo']) or
+                                str(row['categoria']) != str(orig['categoria']) or
+                                str(row['subcategoria']) != str(orig['subcategoria'])
                             )
                             
                             if mudou:
                                 dados_up = {
                                     "data": row['data'],
-                                    "tipo": new_tipo,
-                                    "categoria": new_cat,
-                                    "subcategoria": new_sub,
+                                    "tipo": row['tipo'],
+                                    "categoria": row['categoria'],
+                                    "subcategoria": row['subcategoria'],
                                     "descricao": row['descricao'],
                                     "valor": val_novo,
                                     "conta": row['conta'],
@@ -283,7 +268,7 @@ def show_lancamentos():
                                 count_updates += 1
                     
                     if count_updates > 0:
-                        st.success(f"{count_updates} lançamentos atualizados com sucesso!")
+                        st.success(f"{count_updates} atualizados!")
                         st.rerun()
                     else:
-                        st.info("Nenhuma alteração encontrada para salvar.")
+                        st.info("Nenhuma alteração encontrada.")
