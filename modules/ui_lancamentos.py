@@ -202,8 +202,11 @@ def show_lancamentos():
         
         with c_del:
             # Pega as linhas selecionadas pelo checkbox
-            selected_rows = grid_response['selected_rows']
-            if len(selected_rows) > 0:
+            selected_rows = grid_response.get('selected_rows')
+            
+            # --- CORREÇÃO DO BUG AQUI ---
+            # Verifica se não é None antes de checar o len()
+            if selected_rows is not None and len(selected_rows) > 0:
                 if st.button(f"🗑️ Excluir {len(selected_rows)} Selecionados", type="primary"):
                     # Como selected_rows pode vir como DataFrame ou Lista de Dicts dependendo da versão
                     if isinstance(selected_rows, pd.DataFrame):
@@ -222,65 +225,65 @@ def show_lancamentos():
             # O grid_response['data'] contém o estado atual da tabela visual
             df_edited = grid_response['data']
             
-            # Botão para efetivar edições (AgGrid edita visualmente, precisamos persistir)
-            # Dica: O AgGrid já retorna o DF editado. Vamos comparar ou simplesmente salvar tudo que mudou.
-            # Para otimizar, salvamos apenas se o usuário confirmar, ou podemos tentar auto-save.
-            # Vamos usar botão para segurança.
-            
-            if st.button("💾 Salvar Alterações da Tabela"):
-                count_updates = 0
-                
-                # Itera sobre o DF editado
-                # Nota: df_edited é um DataFrame pandas
-                for index, row in df_edited.iterrows():
-                    # Recupera o original para comparar
-                    id_row = int(row['id'])
-                    original = df[df['id'] == id_row]
+            if df_edited is not None and not df_edited.empty:
+                if st.button("💾 Salvar Alterações da Tabela"):
+                    count_updates = 0
                     
-                    if not original.empty:
-                        orig = original.iloc[0]
+                    # Itera sobre o DF editado
+                    # Nota: df_edited é um DataFrame pandas
+                    for index, row in df_edited.iterrows():
+                        # Recupera o original para comparar
+                        id_row = int(row['id'])
+                        original = df[df['id'] == id_row]
                         
-                        # Reconstrói Tipo/Cat/Sub da string hierárquica
-                        # Formato: "Tipo > Categoria > Sub"
-                        try:
-                            parts = row['hierarquia'].split(" > ")
-                            if len(parts) == 3:
-                                new_tipo, new_cat, new_sub = parts[0], parts[1], parts[2]
-                            else:
-                                # Fallback se algo der errado na string
+                        if not original.empty:
+                            orig = original.iloc[0]
+                            
+                            # Reconstrói Tipo/Cat/Sub da string hierárquica
+                            # Formato: "Tipo > Categoria > Sub"
+                            try:
+                                parts = row['hierarquia'].split(" > ")
+                                if len(parts) == 3:
+                                    new_tipo, new_cat, new_sub = parts[0], parts[1], parts[2]
+                                else:
+                                    # Fallback se algo der errado na string
+                                    new_tipo, new_cat, new_sub = orig['tipo'], orig['categoria'], orig['subcategoria']
+                            except:
                                 new_tipo, new_cat, new_sub = orig['tipo'], orig['categoria'], orig['subcategoria']
-                        except:
-                            new_tipo, new_cat, new_sub = orig['tipo'], orig['categoria'], orig['subcategoria']
 
-                        # Checa mudanças
-                        mudou = (
-                            row['descricao'] != orig['descricao'] or
-                            float(row['valor']) != float(orig['valor']) or
-                            row['data'] != str(orig['data'])[:10] or # Compara string de data YYYY-MM-DD
-                            row['conta'] != orig['conta'] or
-                            row['status'] != orig['status'] or
-                            row['forma_pagamento'] != orig['forma_pagamento'] or
-                            new_cat != orig['categoria'] or
-                            new_sub != orig['subcategoria']
-                        )
-                        
-                        if mudou:
-                            dados_up = {
-                                "data": row['data'],
-                                "tipo": new_tipo,
-                                "categoria": new_cat,
-                                "subcategoria": new_sub,
-                                "descricao": row['descricao'],
-                                "valor": float(row['valor']),
-                                "conta": row['conta'],
-                                "forma_pagamento": row['forma_pagamento'],
-                                "status": row['status']
-                            }
-                            atualizar_lancamento(user_id, id_row, dados_up)
-                            count_updates += 1
-                
-                if count_updates > 0:
-                    st.success(f"{count_updates} lançamentos atualizados com sucesso!")
-                    st.rerun()
-                else:
-                    st.info("Nenhuma alteração encontrada para salvar.")
+                            # Checa mudanças
+                            # Convertemos para string/float garantindo compatibilidade
+                            val_novo = float(row['valor'])
+                            val_orig = float(orig['valor'])
+                            
+                            mudou = (
+                                str(row['descricao']) != str(orig['descricao']) or
+                                abs(val_novo - val_orig) > 0.001 or
+                                str(row['data'])[:10] != str(orig['data'])[:10] or 
+                                str(row['conta']) != str(orig['conta']) or
+                                str(row['status']) != str(orig['status']) or
+                                str(row['forma_pagamento']) != str(orig['forma_pagamento']) or
+                                str(new_cat) != str(orig['categoria']) or
+                                str(new_sub) != str(orig['subcategoria'])
+                            )
+                            
+                            if mudou:
+                                dados_up = {
+                                    "data": row['data'],
+                                    "tipo": new_tipo,
+                                    "categoria": new_cat,
+                                    "subcategoria": new_sub,
+                                    "descricao": row['descricao'],
+                                    "valor": val_novo,
+                                    "conta": row['conta'],
+                                    "forma_pagamento": row['forma_pagamento'],
+                                    "status": row['status']
+                                }
+                                atualizar_lancamento(user_id, id_row, dados_up)
+                                count_updates += 1
+                    
+                    if count_updates > 0:
+                        st.success(f"{count_updates} lançamentos atualizados com sucesso!")
+                        st.rerun()
+                    else:
+                        st.info("Nenhuma alteração encontrada para salvar.")
