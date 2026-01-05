@@ -53,10 +53,10 @@ js_categoria_renderer = JsCode(f"""
 function(params) {{
     const map = {categorias_json};
     const tipo = params.data.tipo;
-    if (map[tipo]) {{
+    if (tipo && map[tipo]) {{
         return Object.keys(map[tipo]);
     }}
-    return ["Selecione o Tipo primeiro"];
+    return ["Selecione o Tipo"];
 }}
 """)
 
@@ -67,22 +67,22 @@ function(params) {{
     const tipo = params.data.tipo;
     const cat = params.data.categoria;
     
-    if (map[tipo] && map[tipo][cat]) {{
+    if (tipo && cat && map[tipo] && map[tipo][cat]) {{
         return map[tipo][cat];
     }}
-    return [];
+    return ["Selecione a Categoria"];
 }}
 """)
 
 # 4. JS para Limpar colunas filhas se o Pai mudar
-# Se mudar Tipo -> Limpa Categoria e Sub
-# Se mudar Categoria -> Limpa Sub
 js_on_cell_change = JsCode("""
 function(params) {
+    // Se mudar Tipo -> Limpa Categoria e Sub
     if (params.colDef.field === 'tipo') {
         params.node.setDataValue('categoria', '');
         params.node.setDataValue('subcategoria', '');
     }
+    // Se mudar Categoria -> Limpa Sub
     if (params.colDef.field === 'categoria') {
         params.node.setDataValue('subcategoria', '');
     }
@@ -161,7 +161,8 @@ def show_lancamentos():
         gb.configure_column("id", hide=True)
         gb.configure_column("data", headerName=CONFIG_UI["TABELA"]["data"], cellEditor="agDateStringCellEditor", width=110)
         
-        # --- COLUNAS DINÂMICAS COM JS ---
+        # --- COLUNAS DINÂMICAS (USANDO agRichSelectCellEditor) ---
+        # Nota: RichSelectCellEditor é mais robusto para listas dinâmicas via JS
         
         # Coluna Tipo (Pai)
         gb.configure_column(
@@ -172,20 +173,20 @@ def show_lancamentos():
             width=100
         )
         
-        # Coluna Categoria (Filha de Tipo)
+        # Coluna Categoria (Filha de Tipo) - USA RICH SELECT
         gb.configure_column(
             "categoria", 
             headerName=CONFIG_UI["TABELA"]["categoria"], 
-            cellEditor="agSelectCellEditor", 
+            cellEditor="agRichSelectCellEditor", 
             cellEditorParams={"values": js_categoria_renderer}, # JS decide as opções
             width=150
         )
         
-        # Coluna Subcategoria (Filha de Categoria)
+        # Coluna Subcategoria (Filha de Categoria) - USA RICH SELECT
         gb.configure_column(
             "subcategoria", 
             headerName=CONFIG_UI["TABELA"]["subcategoria"], 
-            cellEditor="agSelectCellEditor", 
+            cellEditor="agRichSelectCellEditor", 
             cellEditorParams={"values": js_subcategoria_renderer}, # JS decide as opções
             width=150
         )
@@ -224,7 +225,7 @@ def show_lancamentos():
             height=500,
             allow_unsafe_jscode=True, # Obrigatório para o JS funcionar
             theme="streamlit",
-            key='grid_lancamentos_dynamic'
+            key='grid_lancamentos_dynamic_v2'
         )
 
         # 4. Ações (Salvar e Excluir)
