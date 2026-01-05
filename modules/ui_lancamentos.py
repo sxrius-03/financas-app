@@ -1,16 +1,8 @@
 import streamlit as st
-import pandas as pd
-import json
 from datetime import datetime
+import pandas as pd
 from modules.database import salvar_lancamento, carregar_dados, excluir_lancamento, atualizar_lancamento
 from modules.constants import CATEGORIAS
-
-# Tratamento de erro se a lib não estiver instalada
-try:
-    from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode, JsCode
-except ImportError:
-    st.error("⚠️ Biblioteca 'streamlit-aggrid' necessária. Adicione ao requirements.txt")
-    st.stop()
 
 # ==============================================================================
 # 🎛️ PAINEL DE CONTROLE
@@ -19,66 +11,48 @@ except ImportError:
 CONFIG_UI = {
     "GERAL": {
         "titulo_aba_novo": "➕ Novo Lançamento",
-        "titulo_aba_gerenciar": "📊 Editor Avançado (Tabela)",
+        "titulo_aba_gerenciar": "🔍 Gerenciar e Editar",
+        "header_novo": "📝 Registrar Movimentação",
     },
     "TABELA": {
-        "excluir": "🗑️ Excluir?",
-        "data": "📅 Data",
-        "tipo": "Tipo",
-        "categoria": "📂 Categoria",
-        "subcategoria": "🗂️ Subcategoria",
-        "descricao": "📝 Descrição",
-        "valor": "💲 Valor (R$)",
-        "conta": "🏦 Conta",
-        "forma_pagamento": "💳 Forma Pagto",
-        "status": "Estado"
+        "col_selecao": "Editar",
+        "col_data": "📅 Data",
+        "col_tipo": "Tipo",
+        "col_cat": "📂 Categoria",
+        "col_sub": "🗂️ Sub",
+        "col_desc": "📝 Descrição",
+        "col_valor": "💲 Valor",
+        "col_conta": "🏦 Conta",
+        "col_forma": "💳 Forma",
+        "col_status": "Status"
     }
 }
 
-# --- LISTAS COMPLETAS (Para garantir que o dropdown sempre abra) ---
+# Cores para o Styler
+CORES = {
+    "receita": "#2ecc71",    
+    "despesa": "#e74c3c",      
+    "texto": "white"
+}
+
 LISTA_CONTAS = ["Nubank", "Sicredi", "Sicoob", "BNDES", "Banco do Brasil", "Bradesco", "Itaú", "Santander", "Caixa", "Inter", "C6 Bank", "Investimento", "Carteira", "Vale Alimentação", "Conta Principal"]
 LISTA_FORMAS = ["PIX", "Transferência", "Cartão de Débito", "Boleto", "Dinheiro", "Cheque", "Vale Alimentação", "Depósito", "Boleto/Automático"]
 LISTA_STATUS = ["Pago/Recebido", "Pendente", "Agendado"]
-LISTA_TIPOS = ["Receita", "Despesa"]
-
-# Gera listas planas e ordenadas
-todas_cats = set()
-todas_subs = set()
-for t, cats in CATEGORIAS.items():
-    for c, subs in cats.items():
-        todas_cats.add(c)
-        for s in subs:
-            todas_subs.add(s)
-
-LISTA_CATEGORIAS = sorted(list(todas_cats))
-LISTA_SUBCATEGORIAS = sorted(list(todas_subs))
 
 # ==============================================================================
-# 🧠 JAVASCRIPT PARA VALIDAÇÃO VISUAL
+# 🛠️ FUNÇÕES
 # ==============================================================================
-# Já que não podemos filtrar a lista, vamos pintar de VERMELHO se estiver errado.
 
-mapa_json = json.dumps(CATEGORIAS)
-
-js_valida_categoria = JsCode(f"""
-function(params) {{
-    const map = {mapa_json};
-    const tipo = params.data.tipo;
-    const cat = params.value;
+def aplicar_estilo(df):
+    def colorir(row):
+        cor = CORES['receita'] if row['tipo'] == 'Receita' else CORES['despesa']
+        estilos = [''] * len(row)
+        if 'valor' in row.index:
+            idx = row.index.get_loc('valor')
+            estilos[idx] = f'background-color: {cor}; color: {CORES["texto"]}; font-weight: bold; text-align: center'
+        return estilos
     
-    // Se a categoria não existir dentro do Tipo selecionado -> Vermelho
-    if (tipo && map[tipo]) {{
-        if (!map[tipo][cat]) {{
-            return {{'backgroundColor': '#ffcccc', 'color': 'red', 'fontWeight': 'bold'}}; 
-        }}
-    }}
-    return null; // Normal
-}}
-""")
-
-# ==============================================================================
-# 🛠️ FUNÇÕES DO MÓDULO
-# ==============================================================================
+    return df.style.apply(colorir, axis=1).format({'valor': "R$ {:,.2f}", 'data': "{:%d/%m/%Y}"})
 
 def show_lancamentos():
     if 'user_id' not in st.session_state: return
@@ -90,169 +64,154 @@ def show_lancamentos():
     ])
 
     # ===================================================
-    # ABA 1: ADICIONAR NOVO (MANTIDO IGUAL)
+    # ABA 1: NOVO LANCAMENTO
     # ===================================================
     with tab_novo:
-        st.header("📝 Registrar Movimentação")
+        st.header(CONFIG_UI["GERAL"]["header_novo"])
         
-        col1, col2 = st.columns(2)
-        data = col1.date_input("Data", datetime.today())
-        tipo = col2.selectbox("Tipo", list(CATEGORIAS.keys()))
+        c1, c2 = st.columns(2)
+        data = c1.date_input("Data", datetime.today(), key="n_data")
+        tipo = c2.selectbox("Tipo", list(CATEGORIAS.keys()), key="n_tipo")
         
-        col3, col4 = st.columns(2)
-        cats_disponiveis = list(CATEGORIAS[tipo].keys())
-        categoria = col3.selectbox("Categoria", cats_disponiveis)
-        subs_disponiveis = CATEGORIAS[tipo][categoria]
-        subcategoria = col4.selectbox("Subcategoria", subs_disponiveis)
+        c3, c4 = st.columns(2)
+        # Dinâmico nativo do Streamlit
+        cat_ops = list(CATEGORIAS[tipo].keys())
+        categoria = c3.selectbox("Categoria", cat_ops, key="n_cat")
         
-        descricao = st.text_input("Descrição", placeholder="Ex: Mercado Semanal")
+        sub_ops = CATEGORIAS[tipo][categoria]
+        subcategoria = c4.selectbox("Subcategoria", sub_ops, key="n_sub")
+        
+        desc = st.text_input("Descrição", placeholder="Ex: Compra Mercado", key="n_desc")
         
         c5, c6, c7 = st.columns(3)
-        valor = c5.number_input("Valor (R$)", min_value=0.01, step=10.0)
-        conta = c6.selectbox("Conta", LISTA_CONTAS)
-        forma = c7.selectbox("Forma", LISTA_FORMAS)
-        status = st.selectbox("Status", LISTA_STATUS)
+        val = c5.number_input("Valor (R$)", min_value=0.01, step=10.0, key="n_val")
+        conta = c6.selectbox("Conta", LISTA_CONTAS, key="n_conta")
+        status = c7.selectbox("Status", LISTA_STATUS, key="n_stat")
         
-        st.markdown("---")
-        if st.button("💾 Salvar Lançamento", type="primary", use_container_width=True):
+        forma = st.selectbox("Forma Pagto", LISTA_FORMAS, key="n_forma")
+        
+        if st.button("💾 Salvar", type="primary", use_container_width=True):
             novo = {
                 "data": data, "tipo": tipo, "categoria": categoria, "subcategoria": subcategoria,
-                "descricao": descricao, "valor": valor, "conta": conta, "forma_pagamento": forma, "status": status
+                "descricao": desc, "valor": val, "conta": conta, "forma_pagamento": forma, "status": status
             }
             salvar_lancamento(user_id, novo)
-            st.success("Lançamento salvo!")
+            st.success("Salvo com sucesso!")
 
     # ===================================================
-    # ABA 2: GERENCIAR (TABELA COM EXCLUSÃO INTEGRADA)
+    # ABA 2: GERENCIAR (SELEÇÃO + FORMULÁRIO)
     # ===================================================
     with tab_gerenciar:
-        st.info("💡 Marque a caixa '🗑️' para excluir. Categorias inválidas ficarão vermelhas.")
+        st.header("Gerenciar Lançamentos")
         
         df = carregar_dados(user_id)
-        
         if df.empty:
-            st.warning("Sem dados.")
+            st.info("Sem dados.")
             return
 
-        # 1. Preparação dos Dados
-        df['data'] = pd.to_datetime(df['data']).dt.strftime('%Y-%m-%d')
+        # 1. Filtros Rápidos
+        with st.expander("🔍 Filtros"):
+            c_f1, c_f2 = st.columns(2)
+            f_tipo = c_f1.selectbox("Filtrar Tipo", ["Todos", "Receita", "Despesa"])
+            if f_tipo != "Todos":
+                df = df[df['tipo'] == f_tipo]
         
-        # Adiciona coluna de controle de exclusão (padrão False)
-        if 'excluir' not in df.columns:
-            df.insert(0, 'excluir', False)
+        # 2. Tabela de Seleção
+        # Adiciona coluna de seleção
+        df_view = df.copy()
+        df_view.insert(0, "Selecionar", False)
+        
+        # Configuração das Colunas
+        col_cfg = {
+            "Selecionar": st.column_config.CheckboxColumn("Editar?", width="small"),
+            "data": st.column_config.DateColumn(CONFIG_UI["TABELA"]["col_data"], format="DD/MM/YYYY"),
+            "valor": st.column_config.NumberColumn(CONFIG_UI["TABELA"]["col_valor"], format="R$ %.2f"),
+            "tipo": st.column_config.TextColumn(CONFIG_UI["TABELA"]["col_tipo"]),
+            "categoria": st.column_config.TextColumn(CONFIG_UI["TABELA"]["col_cat"]),
+            "subcategoria": st.column_config.TextColumn(CONFIG_UI["TABELA"]["col_sub"]),
+            "descricao": st.column_config.TextColumn(CONFIG_UI["TABELA"]["col_desc"]),
+            "conta": st.column_config.TextColumn(CONFIG_UI["TABELA"]["col_conta"]),
+            "forma_pagamento": st.column_config.TextColumn(CONFIG_UI["TABELA"]["col_forma"]),
+            "status": st.column_config.TextColumn(CONFIG_UI["TABELA"]["col_status"])
+        }
+        
+        # Tabela (Data Editor usado apenas para selecionar a linha)
+        edited_df = st.data_editor(
+            df_view,
+            column_config=col_cfg,
+            hide_index=True,
+            use_container_width=True,
+            disabled=["id", "data", "tipo", "categoria", "subcategoria", "descricao", "valor", "conta", "forma_pagamento", "status"]
+        )
+        
+        # 3. Identifica Seleção Única
+        selecionados = edited_df[edited_df["Selecionar"] == True]
+        
+        st.divider()
+        
+        if len(selecionados) == 0:
+            st.info("Selecione um item na tabela acima para editar ou excluir.")
             
-        cols = ['excluir', 'id', 'data', 'tipo', 'categoria', 'subcategoria', 'descricao', 'valor', 'conta', 'forma_pagamento', 'status']
-        df_grid = df[cols].copy()
-
-        # 2. Configuração do AgGrid
-        gb = GridOptionsBuilder.from_dataframe(df_grid)
-        
-        gb.configure_default_column(editable=True, resizable=True, filterable=True, sortable=True)
-        gb.configure_column("id", hide=True)
-        
-        # Coluna EXCLUIR (Checkbox)
-        gb.configure_column(
-            "excluir", 
-            headerName=CONFIG_UI["TABELA"]["excluir"], 
-            cellEditor="agCheckboxCellEditor", 
-            width=90,
-            pinned="left" # Fixa na esquerda
-        )
-
-        gb.configure_column("data", headerName=CONFIG_UI["TABELA"]["data"], cellEditor="agDateStringCellEditor", width=110)
-        
-        # --- COLUNAS DE CATEGORIZAÇÃO (Listas Fixas + Validação Visual) ---
-        gb.configure_column("tipo", headerName="Tipo", cellEditor="agSelectCellEditor", cellEditorParams={"values": LISTA_TIPOS}, width=100)
-        
-        gb.configure_column(
-            "categoria", 
-            headerName="Categoria", 
-            cellEditor="agSelectCellEditor", 
-            cellEditorParams={"values": LISTA_CATEGORIAS}, 
-            cellStyle=js_valida_categoria, # Fica vermelho se incoerente
-            width=150
-        )
-        
-        gb.configure_column(
-            "subcategoria", 
-            headerName="Subcategoria", 
-            cellEditor="agSelectCellEditor", 
-            cellEditorParams={"values": LISTA_SUBCATEGORIAS}, 
-            width=150
-        )
-        # ------------------------------------------------------------------
-
-        gb.configure_column("descricao", headerName="Descrição", width=200)
-        gb.configure_column("valor", headerName="Valor", type=["numericColumn"], width=120)
-        gb.configure_column("conta", headerName="Conta", cellEditor="agSelectCellEditor", cellEditorParams={"values": LISTA_CONTAS}, width=130)
-        gb.configure_column("forma_pagamento", headerName="Forma", cellEditor="agSelectCellEditor", cellEditorParams={"values": LISTA_FORMAS}, width=140)
-        gb.configure_column("status", headerName="Status", cellEditor="agSelectCellEditor", cellEditorParams={"values": LISTA_STATUS}, width=130)
-
-        gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=15)
-        
-        gridOptions = gb.build()
-
-        # 3. Renderiza
-        grid_response = AgGrid(
-            df_grid,
-            gridOptions=gridOptions,
-            update_mode=GridUpdateMode.MODEL_CHANGED,
-            data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
-            fit_columns_on_grid_load=False,
-            height=500,
-            allow_unsafe_jscode=True,
-            theme="streamlit",
-            key='grid_lancamentos_final'
-        )
-
-        # 4. Botão Único de Salvar (Processa Edições e Exclusões)
-        st.write("")
-        if st.button("💾 PROCESSAR ALTERAÇÕES (Salvar Edições e Excluir Marcados)", type="primary", use_container_width=True):
-            df_edited = grid_response['data']
+        elif len(selecionados) > 1:
+            st.warning("⚠️ Selecione apenas UM item por vez para editar.")
+            # Opção de excluir em massa
+            if st.button(f"🗑️ Excluir {len(selecionados)} itens selecionados", type="primary"):
+                for idx, row in selecionados.iterrows():
+                    excluir_lancamento(user_id, int(row['id']))
+                st.success("Itens excluídos!")
+                st.rerun()
+                
+        elif len(selecionados) == 1:
+            # --- FORMULÁRIO DE EDIÇÃO ---
+            row = selecionados.iloc[0]
+            id_edit = int(row['id'])
             
-            if df_edited is not None and not df_edited.empty:
-                count_edit = 0
-                count_del = 0
+            st.subheader(f"✏️ Editando: {row['descricao']}")
+            
+            with st.form(f"form_edit_{id_edit}"):
+                ec1, ec2 = st.columns(2)
+                e_data = ec1.date_input("Data", pd.to_datetime(row['data']))
+                e_tipo = ec2.selectbox("Tipo", list(CATEGORIAS.keys()), index=list(CATEGORIAS.keys()).index(row['tipo']))
                 
-                for index, row in df_edited.iterrows():
-                    id_row = int(row['id'])
-                    
-                    # 1. Checa Exclusão
-                    if row['excluir'] == True:
-                        excluir_lancamento(user_id, id_row)
-                        count_del += 1
-                        continue # Pula para o próximo, pois esse foi deletado
-                    
-                    # 2. Checa Edição
-                    original = df[df['id'] == id_row]
-                    if not original.empty:
-                        orig = original.iloc[0]
-                        val_novo = float(row['valor'])
-                        val_orig = float(orig['valor'])
-                        
-                        mudou = (
-                            str(row['descricao']) != str(orig['descricao']) or
-                            abs(val_novo - val_orig) > 0.001 or
-                            str(row['data'])[:10] != str(orig['data'])[:10] or 
-                            str(row['conta']) != str(orig['conta']) or
-                            str(row['status']) != str(orig['status']) or
-                            str(row['tipo']) != str(orig['tipo']) or
-                            str(row['categoria']) != str(orig['categoria']) or
-                            str(row['subcategoria']) != str(orig['subcategoria'])
-                        )
-                        
-                        if mudou:
-                            dados_up = {
-                                "data": row['data'], "tipo": row['tipo'], "categoria": row['categoria'],
-                                "subcategoria": row['subcategoria'], "descricao": row['descricao'],
-                                "valor": val_novo, "conta": row['conta'],
-                                "forma_pagamento": row['forma_pagamento'], "status": row['status']
-                            }
-                            atualizar_lancamento(user_id, id_row, dados_up)
-                            count_edit += 1
+                ec3, ec4 = st.columns(2)
+                # Dropdowns dinâmicos REAIS (aqui funcionam 100%)
+                e_cats = list(CATEGORIAS[e_tipo].keys())
+                # Tenta manter a categoria atual se compatível
+                idx_cat = e_cats.index(row['categoria']) if row['categoria'] in e_cats else 0
+                e_cat = ec3.selectbox("Categoria", e_cats, index=idx_cat)
                 
-                if count_del > 0 or count_edit > 0:
-                    st.success(f"✅ Sucesso! {count_del} excluídos e {count_edit} atualizados.")
+                e_subs = CATEGORIAS[e_tipo][e_cat]
+                idx_sub = e_subs.index(row['subcategoria']) if row['subcategoria'] in e_subs else 0
+                e_sub = ec4.selectbox("Subcategoria", e_subs, index=idx_sub)
+                
+                e_desc = st.text_input("Descrição", value=row['descricao'])
+                
+                ec5, ec6, ec7 = st.columns(3)
+                e_val = ec5.number_input("Valor", value=float(row['valor']), min_value=0.01)
+                
+                idx_conta = LISTA_CONTAS.index(row['conta']) if row['conta'] in LISTA_CONTAS else 0
+                e_conta = ec6.selectbox("Conta", LISTA_CONTAS, index=idx_conta)
+                
+                idx_stat = LISTA_STATUS.index(row['status']) if row['status'] in LISTA_STATUS else 0
+                e_stat = ec7.selectbox("Status", LISTA_STATUS, index=idx_stat)
+                
+                idx_forma = LISTA_FORMAS.index(row['forma_pagamento']) if row['forma_pagamento'] in LISTA_FORMAS else 0
+                e_forma = st.selectbox("Forma Pagto", LISTA_FORMAS, index=idx_forma)
+                
+                c_save, c_del_single = st.columns([4, 1])
+                
+                if c_save.form_submit_button("💾 Salvar Alterações", type="primary"):
+                    dados_up = {
+                        "data": e_data, "tipo": e_tipo, "categoria": e_cat, "subcategoria": e_sub,
+                        "descricao": e_desc, "valor": e_val, "conta": e_conta,
+                        "forma_pagamento": e_forma, "status": e_stat
+                    }
+                    atualizar_lancamento(user_id, id_edit, dados_up)
+                    st.success("Atualizado com sucesso!")
                     st.rerun()
-                else:
-                    st.info("Nenhuma alteração pendente.")
+            
+            # Botão de excluir fora do form para não submeter
+            if st.button("🗑️ Excluir este item", type="secondary"):
+                excluir_lancamento(user_id, id_edit)
+                st.success("Item excluído.")
+                st.rerun()
